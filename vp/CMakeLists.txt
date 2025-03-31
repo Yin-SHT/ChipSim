@@ -31,6 +31,9 @@ endif()
 find_package( SoftFloat REQUIRED )
 include_directories( ${SoftFloat_INCLUDE_DIRS} )
 
+find_package( YamlCpp REQUIRED )
+include_directories( ${YamlCpp_INCLUDE_DIRS} )
+
 subdirs(src)
 
 enable_testing()
