@@ -14,6 +14,8 @@
 #include <systemc.h>
 #include "GlobalParams.h"
 
+#define FLIT_SIZE 8
+
 // Coord -- XY coordinates type of the Tile inside the Mesh
 class Coord {
   public:
@@ -33,6 +35,8 @@ enum FlitType {
 struct Payload {
     sc_uint<32> data;	// Bus for the data to be exchanged
 
+    uint8_t data_array[FLIT_SIZE]; // Actual data for transfer
+
     inline bool operator ==(const Payload & payload) const {
 	return (payload.data == data);
 }};
@@ -47,21 +51,36 @@ struct Packet {
     int flit_left;		// Number of remaining flits inside the packet
     bool use_low_voltage_path;
 
+    uint8_t *payload;
+
     // Constructors
     Packet() { }
 
     Packet(const int s, const int d, const int vc, const double ts, const int sz) {
-	make(s, d, vc, ts, sz);
+        make(s, d, vc, ts, sz);
     }
 
     void make(const int s, const int d, const int vc, const double ts, const int sz) {
-	src_id = s;
-	dst_id = d;
-	vc_id = vc;
-	timestamp = ts;
-	size = sz;
-	flit_left = sz;
-	use_low_voltage_path = false;
+        src_id = s;
+        dst_id = d;
+        vc_id = vc;
+        timestamp = ts;
+        size = sz;
+        flit_left = sz;
+        use_low_voltage_path = false;
+    }
+
+    void make(const int s, const int d, const int vc, const double ts, const int sz, const uint8_t *data, const int data_len) {
+        src_id = s;
+        dst_id = d;
+        vc_id = vc;
+        timestamp = ts;
+        size = sz;
+        flit_left = sz;
+        use_low_voltage_path = false;
+
+        payload = new uint8_t[data_len];
+        memcpy(payload, data, data_len);
     }
 };
 

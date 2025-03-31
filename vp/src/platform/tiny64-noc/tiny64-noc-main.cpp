@@ -14,6 +14,8 @@
 #include "DataStructs.h"
 #include "GlobalParams.h"
 
+#include "dma_ctrl.h"
+
 #include <csignal>
 
 using namespace std;
@@ -61,6 +63,14 @@ int sc_main(int arg_num, char *arg_vet[])
 
     n->clock(clock);
     n->reset(reset);
+
+    for (int j = 0; j < GlobalParams::mesh_dim_y; j++) {
+        for (int i = 0; i < GlobalParams::mesh_dim_x; i++) {
+            DMACTRL *dma_ctrl = new DMACTRL((std::string("DMACTRL") + to_string(i) + "_" + to_string(j)).c_str());
+            n->t[i][j]->pe->local_isock.bind(dma_ctrl->local_tsock);
+            dma_ctrl->local_isock.bind(n->t[i][j]->pe->local_tsock);
+        }
+    }
 
     // Trace signals
     sc_trace_file *tf = NULL;

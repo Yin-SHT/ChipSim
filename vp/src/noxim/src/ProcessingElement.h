@@ -12,14 +12,18 @@
 #define __NOXIMPROCESSINGELEMENT_H__
 
 #include <systemc.h>
+#include <tlm_utils/simple_initiator_socket.h>
+#include <tlm_utils/simple_target_socket.h>
 
 #include <queue>
+#include <vector>
 
 #include "DataStructs.h"
 #include "GlobalTrafficTable.h"
 #include "Utils.h"
 
 using namespace std;
+using namespace tlm;
 
 SC_MODULE(ProcessingElement) {
 	// I/O Ports
@@ -37,6 +41,16 @@ SC_MODULE(ProcessingElement) {
 	sc_in<TBufferFullStatus> buffer_full_status_tx;
 
 	sc_in<int> free_slots_neighbor;
+
+	tlm_utils::simple_target_socket<ProcessingElement> local_tsock; // target socket for DMA Ctrl
+	tlm_utils::simple_initiator_socket<ProcessingElement> local_isock; // initiator socket for DMA Ctrl
+
+	// 数据包接收相关变量
+	vector<uint8_t> packet_buffer;  // 当前数据包的缓冲区
+	int current_packet_size;        // 当前数据包的大小
+	bool receiving_packet;          // 是否正在接收数据包
+
+	vector<Packet> dma_rx_buffer;
 
 	// Registers
 	int local_id;                     // Unique identification number
@@ -59,6 +73,9 @@ SC_MODULE(ProcessingElement) {
 	Packet trafficButterfly();      // Butterfly destination distribution
 	Packet trafficLocal();          // Random with locality
 	Packet trafficULocal();         // Random with locality
+
+	// DMA 相关函数
+	void dma_b_transport(tlm_generic_payload& trans, sc_time& delay);
 
 	GlobalTrafficTable *traffic_table;  // Reference to the Global traffic Table
 	bool never_transmit;                // true if the PE does not transmit any packet
@@ -84,6 +101,8 @@ SC_MODULE(ProcessingElement) {
 		SC_METHOD(txProcess);
 		sensitive << reset;
 		sensitive << clock.pos();
+
+		local_tsock.register_b_transport(this, &ProcessingElement::dma_b_transport);
 	}
 };
 

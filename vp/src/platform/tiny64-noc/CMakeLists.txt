@@ -12,8 +12,9 @@ target_include_directories(tiny64-vp-noc PRIVATE
     ${CMAKE_SOURCE_DIR}/src/noxim/src
     ${CMAKE_SOURCE_DIR}/src/noxim/src/routingAlgorithms
     ${CMAKE_SOURCE_DIR}/src/noxim/src/selectionStrategies
+    ${CMAKE_SOURCE_DIR}/src/core/engine
 )
 
-target_link_libraries(tiny64-vp-noc rv64 platform-common gdb-mc ${Boost_LIBRARIES} ${SystemC_LIBRARIES} ${YamlCpp_LIBRARIES} pthread)
+target_link_libraries(tiny64-vp-noc rv64 engine platform-common gdb-mc ${Boost_LIBRARIES} ${SystemC_LIBRARIES} ${YamlCpp_LIBRARIES} pthread)
 
 INSTALL(TARGETS tiny64-vp-noc RUNTIME DESTINATION bin)
