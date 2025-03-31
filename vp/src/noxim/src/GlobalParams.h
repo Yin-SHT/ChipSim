@@ -21,6 +21,7 @@ using namespace std;
 
 #define CONFIG_FILENAME        "config.yaml"
 #define POWER_CONFIG_FILENAME  "power.yaml"
+#define PE_CONFIG_FILENAME     "pe.yaml"
 
 // Define the directions as numbers
 #define DIRECTIONS              4
@@ -138,9 +139,32 @@ typedef struct {
     HubPowerConfig hubPowerConfig;
 } PowerConfig;
 
+typedef unsigned int addr_t;
+
 struct GlobalParams {
+    // PE Configuration 
+	static std::string pe_config_filename;
+	static std::string elf;
+	static bool intercept_syscalls;
+	static bool use_debug_runner;
+	static unsigned int debug_port;
+	static bool pe_trace_mode;
+	static unsigned int tlm_global_quantum;
+	static bool use_instr_dmi;
+	static bool use_data_dmi;
+	static addr_t mem_size;  
+	static addr_t mem_start_addr;
+	static addr_t mem_end_addr;
+	static addr_t clint_start_addr;
+	static addr_t clint_end_addr;
+	static addr_t sys_start_addr;
+	static addr_t sys_end_addr;
+	static bool quiet;
+	static bool use_E_base_isa;
+
+    // Noxim Configuration
     static string verbose_mode;
-    static int trace_mode;
+    static int noc_trace_mode;
     static string trace_filename;
     static string topology;
     static int mesh_dim_x;

@@ -13,6 +13,8 @@
 #include "util/common.h"
 #include "debug.h"
 
+#include "core/engine/dma_ctrl.h"
+
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
@@ -152,6 +154,9 @@ struct ISS : public external_interrupt_target, public clint_interrupt_target, pu
 	csr_table csrs;
 	PrivilegeLevel prv = MachineMode;
 	int64_t lr_sc_counter = 0;
+
+    // Engine
+    DMACTRL *dma_ctrl = nullptr;
 
 	// last decoded and executed instruction and opcode
 	Instruction instr;

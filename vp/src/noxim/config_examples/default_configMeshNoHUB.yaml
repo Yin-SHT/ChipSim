@@ -140,10 +140,10 @@ use_wirxsleep: false
 #   VERBOSE_LOW
 #   VERBOSE_MEDIUM
 #   VERBOSE_HIGH
-verbose_mode: VERBOSE_OFF
+verbose_mode: VERBOSE_LOW
 
 # Trace
-trace_mode: false
+noc_trace_mode: false
 trace_filename: ""
 
 min_packet_size: 8

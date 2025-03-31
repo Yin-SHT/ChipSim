@@ -22,8 +22,11 @@
 #include "GlobalTrafficTable.h"
 #include "Utils.h"
 
+#include "core/rv64/iss.h"
+
 using namespace std;
 using namespace tlm;
+using namespace rv64;
 
 SC_MODULE(ProcessingElement) {
 	// I/O Ports
@@ -44,6 +47,8 @@ SC_MODULE(ProcessingElement) {
 
 	tlm_utils::simple_target_socket<ProcessingElement> local_tsock; // target socket for DMA Ctrl
 	tlm_utils::simple_initiator_socket<ProcessingElement> local_isock; // initiator socket for DMA Ctrl
+
+    ISS *core;
 
 	// 数据包接收相关变量
 	vector<uint8_t> packet_buffer;  // 当前数据包的缓冲区

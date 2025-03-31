@@ -10,8 +10,30 @@
 
 #include "GlobalParams.h"
 
+std::string GlobalParams::pe_config_filename;
+std::string GlobalParams::elf;
+
+bool GlobalParams::intercept_syscalls;
+bool GlobalParams::use_debug_runner;
+unsigned int GlobalParams::debug_port;
+bool GlobalParams::pe_trace_mode;
+unsigned int GlobalParams::tlm_global_quantum;
+bool GlobalParams::use_instr_dmi;
+bool GlobalParams::use_data_dmi;
+
+addr_t GlobalParams::mem_size;
+addr_t GlobalParams::mem_start_addr;
+addr_t GlobalParams::mem_end_addr;
+addr_t GlobalParams::clint_start_addr;
+addr_t GlobalParams::clint_end_addr;
+addr_t GlobalParams::sys_start_addr;
+addr_t GlobalParams::sys_end_addr;
+
+bool GlobalParams::quiet;
+bool GlobalParams::use_E_base_isa;
+
 string GlobalParams::verbose_mode;
-int GlobalParams::trace_mode;
+int GlobalParams::noc_trace_mode;
 string GlobalParams::trace_filename;
 
 string GlobalParams::topology;
