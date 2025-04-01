@@ -88,14 +88,14 @@ void RegFile::show() {
 	}
 }
 
-ISS::ISS(uint64_t hart_id) : systemc_name("Core-" + std::to_string(hart_id)) {
+ISS::ISS(sc_core::sc_module_name name, uint64_t hart_id) : systemc_name("Core-" + std::to_string(hart_id)) {
 	csrs.mhartid.reg = hart_id;
 
 	sc_core::sc_time qt = tlm::tlm_global_quantum::instance().get();
 	cycle_time = sc_core::sc_time(10, sc_core::SC_NS);
 
-	assert(qt >= cycle_time);
-	assert(qt % cycle_time == sc_core::SC_ZERO_TIME);
+	// assert(qt >= cycle_time);
+	// assert(qt % cycle_time == sc_core::SC_ZERO_TIME);
 
 	for (int i = 0; i < Opcode::NUMBER_OF_INSTRUCTIONS; ++i) instr_cycles[i] = cycle_time;
 
@@ -118,6 +118,8 @@ ISS::ISS(uint64_t hart_id) : systemc_name("Core-" + std::to_string(hart_id)) {
 	instr_cycles[Opcode::DIVU] = mul_div_cycles;
 	instr_cycles[Opcode::REM] = mul_div_cycles;
 	instr_cycles[Opcode::REMU] = mul_div_cycles;
+
+    // SC_THREAD(run);
 }
 
 void ISS::exec_step() {
@@ -1915,13 +1917,22 @@ void ISS::run_step() {
 }
 
 void ISS::run() {
-	// run a single step until either a breakpoint is hit or the execution terminates
-	do {
-		run_step();
-	} while (status == CoreExecStatus::Runnable);
+    // wait for reset signal to be 0
+    while (reset.read() == true) {
+        quantum_keeper.sync();
+    }
 
-	// force sync to make sure that no action is missed
-	quantum_keeper.sync();
+    // run a single step until either a breakpoint is hit or the execution terminates
+    do {
+        run_step();
+    } while (status == CoreExecStatus::Runnable);
+
+    // force sync to make sure that no action is missed
+    quantum_keeper.sync();
+
+    // wait for exit simulation
+    while (true)
+        ;
 }
 
 void ISS::show() {

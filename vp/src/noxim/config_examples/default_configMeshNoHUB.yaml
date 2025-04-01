@@ -140,7 +140,7 @@ use_wirxsleep: false
 #   VERBOSE_LOW
 #   VERBOSE_MEDIUM
 #   VERBOSE_HIGH
-verbose_mode: VERBOSE_LOW
+verbose_mode: VERBOSE_OFF
 
 # Trace
 noc_trace_mode: false

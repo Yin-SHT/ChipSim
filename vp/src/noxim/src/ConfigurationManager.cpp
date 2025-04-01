@@ -11,6 +11,7 @@
 #include "ConfigurationManager.h"
 
 #include <systemc.h>  //Included for the function time()
+#include <cstdlib>
 
 YAML::Node config;
 YAML::Node power_config;
@@ -676,8 +677,6 @@ void configure(int arg_num, char *arg_vet[]) {
 	// Show configuration
 	if (GlobalParams::verbose_mode != VERBOSE_OFF)
 		showConfig();
-
-    exit(0);
 }
 
 template <typename T>

@@ -139,7 +139,7 @@ struct PendingInterrupts {
 	uint64_t pending;
 };
 
-struct ISS : public external_interrupt_target, public clint_interrupt_target, public debug_target_if, public iss_syscall_if {
+struct ISS : public sc_core::sc_module, public external_interrupt_target, public clint_interrupt_target, public debug_target_if, public iss_syscall_if {
 	clint_if *clint = nullptr;
 	instr_memory_if *instr_mem = nullptr;
 	data_memory_if *mem = nullptr;
@@ -178,7 +178,13 @@ struct ISS : public external_interrupt_target, public clint_interrupt_target, pu
 	static constexpr int64_t REG32_MIN = INT32_MIN;
 	static constexpr unsigned xlen = 64;
 
-	ISS(uint64_t hart_id);
+    // I/O Ports
+    sc_in_clk clock;		// The input clock for the NoC
+    sc_in < bool > reset;	// The reset signal for the NoC
+
+    SC_HAS_PROCESS(ISS);
+
+	ISS(sc_core::sc_module_name name, uint64_t hart_id);
 
 	Architecture get_architecture(void) override {
 		return RV64;

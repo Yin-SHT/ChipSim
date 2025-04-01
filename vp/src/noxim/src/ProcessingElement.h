@@ -50,10 +50,9 @@ SC_MODULE(ProcessingElement) {
 
     ISS *core;
 
-	// 数据包接收相关变量
-	vector<uint8_t> packet_buffer;  // 当前数据包的缓冲区
-	int current_packet_size;        // 当前数据包的大小
-	bool receiving_packet;          // 是否正在接收数据包
+	vector<uint8_t> packet_buffer;  
+	int current_packet_size;        
+	bool receiving_packet;          
 
 	vector<Packet> dma_rx_buffer;
 

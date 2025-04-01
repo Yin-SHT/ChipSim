@@ -14,7 +14,7 @@
 #include <systemc.h>
 #include "GlobalParams.h"
 
-#define FLIT_SIZE 8
+#define FLIT_SIZE 4
 
 // Coord -- XY coordinates type of the Tile inside the Mesh
 class Coord {
@@ -35,8 +35,6 @@ enum FlitType {
 struct Payload {
     sc_uint<32> data;	// Bus for the data to be exchanged
 
-    uint8_t data_array[FLIT_SIZE]; // Actual data for transfer
-
     inline bool operator ==(const Payload & payload) const {
 	return (payload.data == data);
 }};
@@ -51,7 +49,7 @@ struct Packet {
     int flit_left;		// Number of remaining flits inside the packet
     bool use_low_voltage_path;
 
-    uint8_t *payload;
+    uint8_t *data; // actual payload
 
     // Constructors
     Packet() { }
@@ -70,7 +68,7 @@ struct Packet {
         use_low_voltage_path = false;
     }
 
-    void make(const int s, const int d, const int vc, const double ts, const int sz, const uint8_t *data, const int data_len) {
+    void make(const int s, const int d, const int vc, const double ts, const int sz, const uint8_t *_data, const int data_len) {
         src_id = s;
         dst_id = d;
         vc_id = vc;
@@ -79,8 +77,8 @@ struct Packet {
         flit_left = sz;
         use_low_voltage_path = false;
 
-        payload = new uint8_t[data_len];
-        memcpy(payload, data, data_len);
+        data = new uint8_t[data_len];
+        memcpy(data, _data, data_len);
     }
 };
 
@@ -148,6 +146,8 @@ struct Flit {
     bool use_low_voltage_path;
 
     int hub_relay_node;
+
+    uint8_t data[FLIT_SIZE]; // Actual data to carried
 
     inline bool operator ==(const Flit & flit) const {
 	return (flit.src_id == src_id && flit.dst_id == dst_id

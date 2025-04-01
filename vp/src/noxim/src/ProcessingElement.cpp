@@ -28,42 +28,28 @@ void ProcessingElement::rxProcess() {
 		if (req_rx.read() == 1 - current_level_rx) {
 			Flit flit_tmp = flit_rx.read();
 			
-			// 处理接收到的 flit
 			if (flit_tmp.flit_type == FLIT_TYPE_HEAD) {
-				// 开始新的数据包
 				packet_buffer.clear();
 				current_packet_size = flit_tmp.sequence_length;
 				receiving_packet = true;
-				printf("PE[%d]: 开始接收新数据包，大小: %d\n", local_id, current_packet_size);
 			}
 			
 			if (receiving_packet) {
-				// 将 payload 添加到缓冲区
-				uint8_t* payload_ptr = flit_tmp.payload.data_array;
-				packet_buffer.insert(packet_buffer.end(), payload_ptr, payload_ptr + FLIT_SIZE);
+				uint8_t* data = flit_tmp.data;
+				packet_buffer.insert(packet_buffer.end(), data, data + FLIT_SIZE);
 				
-				// 如果是 tail flit，发送整个数据包
 				if (flit_tmp.flit_type == FLIT_TYPE_TAIL) {
-					printf("PE[%d]: 接收到 tail flit, 准备发送数据包, 大小: %zu 字节\n", 
-						local_id, packet_buffer.size());
-					
-					// 创建 TLM 传输
 					tlm_generic_payload trans;
 					sc_time delay = SC_ZERO_TIME;
 					
-					// 设置传输参数
 					trans.set_command(TLM_WRITE_COMMAND);
 					trans.set_data_ptr(packet_buffer.data());
 					trans.set_data_length(packet_buffer.size());
-					trans.set_response_status(TLM_INCOMPLETE_RESPONSE);
 					
-					// 发送数据到 DMA 控制器
 					local_isock->b_transport(trans, delay);
 					
 					if (trans.get_response_status() == TLM_OK_RESPONSE) {
-						printf("PE[%d]: 成功发送数据包到 DMA 控制器\n", local_id);
-					} else {
-						printf("PE[%d]: 发送数据包到 DMA 控制器失败\n", local_id);
+						// TODO
 					}
 					
 					// 重置接收状态
@@ -83,20 +69,29 @@ void ProcessingElement::dma_b_transport(tlm_generic_payload& trans, sc_time& del
 	uint8_t* data_ptr = trans.get_data_ptr();
 	unsigned int data_len = trans.get_data_length();
 
-    // extract dst_id
+	assert(data_len % FLIT_SIZE == 0);
+
+    // extract header
 	int dst_id = data_ptr[0];
+	int res_1  = data_ptr[1];
+	int res_2  = data_ptr[2];
+	int res_3  = data_ptr[3];
+
+	assert(dst_id < 16);
+
+	// extract payload
+	uint8_t *payload = data_ptr + FLIT_SIZE;
+	uint8_t nr_flit  = data_len / FLIT_SIZE - 1; // minus header
+	int payload_byte = nr_flit * FLIT_SIZE;
 
     // create packet
 	Packet packet;
-	packet.make(local_id, dst_id, 0, sc_time_stamp().to_double() / GlobalParams::clock_period_ps, 
-					   (data_len - FLIT_SIZE) / FLIT_SIZE, data_ptr + FLIT_SIZE, data_len - FLIT_SIZE); // TODO: 需要修改
+	double now = sc_time_stamp().to_double() / GlobalParams::clock_period_ps;
+	packet.make(local_id, dst_id, 0, now, nr_flit, payload, payload_byte);
 
     // push packet to packet_queue
     packet_queue.push(packet);
     
-    printf("PE[%d]: 创建新数据包，目标节点: %d, 大小: %d flits\n", 
-            local_id, dst_id, packet.size);
-	
 	trans.set_response_status(TLM_OK_RESPONSE);
 }
 
@@ -129,15 +124,11 @@ Flit ProcessingElement::nextFlit() {
 	flit.sequence_length = packet.size;
 	flit.hop_no = 0;
 
-	if (packet.payload != nullptr) {
+	if (packet.data != nullptr) {
 		int start_idx = (packet.size - packet.flit_left) * FLIT_SIZE;
-		int end_idx = start_idx + FLIT_SIZE > packet.size * FLIT_SIZE ? packet.size * FLIT_SIZE : start_idx + FLIT_SIZE;
-		
-		size_t copy_size = (end_idx - start_idx) < FLIT_SIZE ? 
-						  (end_idx - start_idx) : FLIT_SIZE;
 
-		memset(&flit.payload, 0, FLIT_SIZE);  // 清空 payload
-		memcpy(&flit.payload, packet.payload + start_idx, copy_size);
+		memset(flit.data, 0, FLIT_SIZE);  
+		memcpy(flit.data, packet.data + start_idx, FLIT_SIZE);
 	}
 
 	flit.hub_relay_node = NOT_VALID;
@@ -151,8 +142,9 @@ Flit ProcessingElement::nextFlit() {
 
 	packet_queue.front().flit_left--;
 	if (packet_queue.front().flit_left == 0) {
-		if (packet_queue.front().payload != nullptr) {
-			delete[] packet_queue.front().payload;
+		if (packet_queue.front().data != nullptr) {
+			// Don't forget
+			delete[] packet_queue.front().data;
 		}
 		packet_queue.pop();
 	}
