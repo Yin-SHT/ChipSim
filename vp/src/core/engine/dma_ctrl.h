@@ -54,7 +54,7 @@ class DMACTRL : public sc_module {
 		while (true) {
 			wait(send_interval);
 
-			if (strcmp(name(), "dma_ctrl[0,0]")) break;
+			if (strcmp(name(), "DMACTRL[0,0]")) break;
 
 			// create header
 			uint8_t dst_id = i ++;

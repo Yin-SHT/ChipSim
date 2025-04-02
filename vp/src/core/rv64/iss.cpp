@@ -88,11 +88,11 @@ void RegFile::show() {
 	}
 }
 
-ISS::ISS(sc_core::sc_module_name name, uint64_t hart_id) : systemc_name("Core-" + std::to_string(hart_id)) {
+ISS::ISS(sc_core::sc_module_name name, uint64_t hart_id) : systemc_name(name) {
 	csrs.mhartid.reg = hart_id;
 
-	sc_core::sc_time qt = tlm::tlm_global_quantum::instance().get();
-	cycle_time = sc_core::sc_time(10, sc_core::SC_NS);
+	// sc_core::sc_time qt = tlm::tlm_global_quantum::instance().get();
+	cycle_time = sc_core::sc_time(1000, sc_core::SC_PS);
 
 	// assert(qt >= cycle_time);
 	// assert(qt % cycle_time == sc_core::SC_ZERO_TIME);
@@ -119,7 +119,11 @@ ISS::ISS(sc_core::sc_module_name name, uint64_t hart_id) : systemc_name("Core-" 
 	instr_cycles[Opcode::REM] = mul_div_cycles;
 	instr_cycles[Opcode::REMU] = mul_div_cycles;
 
-    // SC_THREAD(run);
+	SC_METHOD(run_wrapper);
+	sensitive << reset;
+	sensitive << clock.pos();
+
+    SC_THREAD(run);
 }
 
 void ISS::exec_step() {
@@ -1917,22 +1921,25 @@ void ISS::run_step() {
 }
 
 void ISS::run() {
-    // wait for reset signal to be 0
-    while (reset.read() == true) {
-        quantum_keeper.sync();
-    }
+	wait(start_event);
 
-    // run a single step until either a breakpoint is hit or the execution terminates
-    do {
-        run_step();
-    } while (status == CoreExecStatus::Runnable);
+	std::cout << name() << " Running" << std::endl;
+
+	// run a single step until either a breakpoint is hit or the execution terminates
+	do {
+		run_step();
+	} while (status == CoreExecStatus::Runnable);
 
     // force sync to make sure that no action is missed
-    quantum_keeper.sync();
+    (*nr_done) ++;
+	std::cout << name() << " Done" << std::endl;
+    // quantum_keeper.sync();
+}
 
-    // wait for exit simulation
-    while (true)
-        ;
+void ISS::run_wrapper() {
+	if (!reset.read()) {
+		start_event.notify();
+	}
 }
 
 void ISS::show() {

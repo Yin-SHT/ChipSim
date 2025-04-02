@@ -64,7 +64,7 @@ void loadConfiguration() {
 	}
 
 	// Initialize pe configuration parameters (can be overridden with command-line arguments)
-	GlobalParams::intercept_syscalls = readParam<bool>(pe_config, "intercept_syscalls", false);
+	GlobalParams::intercept_syscalls = readParam<bool>(pe_config, "intercept_syscalls", true);
 	GlobalParams::use_debug_runner = readParam<bool>(pe_config, "use_debug_runner", false);
 	GlobalParams::debug_port = readParam<unsigned int>(pe_config, "debug_port", 5005);
 	GlobalParams::pe_trace_mode = readParam<bool>(pe_config, "pe_trace_mode", false);

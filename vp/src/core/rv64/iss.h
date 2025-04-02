@@ -19,6 +19,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <thread>
+#include <atomic>
 #include <functional>
 #include <iostream>
 #include <map>
@@ -182,6 +184,10 @@ struct ISS : public sc_core::sc_module, public external_interrupt_target, public
     sc_in_clk clock;		// The input clock for the NoC
     sc_in < bool > reset;	// The reset signal for the NoC
 
+	sc_core::sc_event start_event;
+
+    std::atomic<int> *nr_done; // record the number of cores that have completed simulation
+
     SC_HAS_PROCESS(ISS);
 
 	ISS(sc_core::sc_module_name name, uint64_t hart_id);
@@ -337,6 +343,8 @@ struct ISS : public sc_core::sc_module, public external_interrupt_target, public
 	void run_step() override;
 
 	void run() override;
+
+	void run_wrapper();
 
 	void show();
 };

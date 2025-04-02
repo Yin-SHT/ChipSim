@@ -11,14 +11,14 @@ class MemoryDMI {
 	MemoryDMI(uint8_t *mem, uint64_t start, uint64_t size) : mem(mem), start(start), size(size), end(start + size) {}
 
    public:
-	static MemoryDMI create_start_end_mapping(uint8_t *mem, uint64_t start, uint64_t end) {
+	static MemoryDMI *create_start_end_mapping(uint8_t *mem, uint64_t start, uint64_t end) {
 		assert(end > start);
 		return create_start_size_mapping(mem, start, end - start);
 	}
 
-	static MemoryDMI create_start_size_mapping(uint8_t *mem, uint64_t start, uint64_t size) {
+	static MemoryDMI *create_start_size_mapping(uint8_t *mem, uint64_t start, uint64_t size) {
 		assert(start + size > start);
-		return MemoryDMI(mem, start, size);
+		return new MemoryDMI(mem, start, size);
 	}
 
 	uint8_t *get_raw_mem_ptr() {

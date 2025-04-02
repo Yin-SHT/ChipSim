@@ -16,6 +16,7 @@
 
 #include "dma_ctrl.h"
 
+#include <atomic>
 #include <csignal>
 #include <cstdlib>
 #include <ctime>
@@ -32,12 +33,36 @@
 #include "mmu.h"
 #include "syscall.h"
 
+#define MODULE_NAME(MODULE,i,j) \
+     (std::string(#MODULE "[" + std::to_string(i) + "," + std::to_string(j) + "]")).c_str()
+
 using namespace std;
 using namespace rv64;
 
 // need to be globally visible to allow "-volume" simulation stop
 unsigned int drained_volume;
 NoC *n;
+
+struct Runner : public sc_core::sc_module {
+	sc_in_clk clock;    
+	sc_in<bool> reset;  
+
+    std::atomic<int> *nr_done;
+    int nr_cores;
+
+    SC_CTOR(Runner) : nr_done(nullptr), nr_cores(0) {
+		SC_METHOD(run);
+		sensitive << reset;
+		sensitive << clock.pos();
+	}
+
+	void run() {
+        if (!reset.read()) {
+            if (*nr_done == nr_cores)
+                sc_stop();
+        }
+	}
+};
 
 void signalHandler( int signum )
 {
@@ -50,59 +75,53 @@ void signalHandler( int signum )
 }
 
 void config_core(ISS &core, int i, int j) {
-	MMU mmu(core);
-	CombinedMemoryInterface core_mem_if("MemoryInterface0", core, mmu);
-	SimpleMemory mem("SimpleMemory", GlobalParams::mem_size);
-	ELFLoader loader(GlobalParams::elf.c_str());
-	SimpleBus<2, 3> bus("SimpleBus");
-	SyscallHandler sys("SyscallHandler");
-	CLINT<1> clint((std::string("CLINT") + to_string(i) + "_" + to_string(j)).c_str());
-	DebugMemoryInterface dbg_if("DebugMemoryInterface");
+	MMU *mmu = new MMU(core);
+	CombinedMemoryInterface *core_mem_if = new CombinedMemoryInterface(MODULE_NAME(CombinedMemoryInterface,i,j), core, *mmu);
+	SimpleMemory *mem = new SimpleMemory(MODULE_NAME(SimpleMemory,i,j), GlobalParams::mem_size);
+	ELFLoader *loader = new ELFLoader(GlobalParams::elf.c_str());
+	SimpleBus<2, 3> *bus = new SimpleBus<2, 3>(MODULE_NAME(SimpleBus,i,j));
+	SyscallHandler *sys = new SyscallHandler(MODULE_NAME(SyscallHandler,i,j));
+	CLINT<1> *clint = new CLINT<1>(MODULE_NAME(CLINT,i,j));
+	DebugMemoryInterface *dbg_if = new DebugMemoryInterface(MODULE_NAME(DebugMemoryInterface,i,j));
 
-	MemoryDMI dmi = MemoryDMI::create_start_size_mapping(mem.data, GlobalParams::mem_start_addr, mem.size);
-	InstrMemoryProxy instr_mem(dmi, core);
+	MemoryDMI *dmi = MemoryDMI::create_start_size_mapping(mem->data, GlobalParams::mem_start_addr, mem->size);
+	InstrMemoryProxy *instr_mem = new InstrMemoryProxy(*dmi, core);
 
 	std::shared_ptr<BusLock> bus_lock = std::make_shared<BusLock>();
-	core_mem_if.bus_lock = bus_lock;
-	mmu.mem = &core_mem_if;
+	core_mem_if->bus_lock = bus_lock;
+	mmu->mem = core_mem_if;
 
-	instr_memory_if *instr_mem_if = &core_mem_if;
-	data_memory_if *data_mem_if = &core_mem_if;
-	if (GlobalParams::use_instr_dmi)
-		instr_mem_if = &instr_mem;
-	if (GlobalParams::use_data_dmi) {
-		core_mem_if.dmi_ranges.emplace_back(dmi);
-	}
+	instr_memory_if *instr_mem_if = core_mem_if;
+	data_memory_if *data_mem_if = core_mem_if;
 
-	loader.load_executable_image(mem.data, mem.size, GlobalParams::mem_start_addr);
-	core.init(instr_mem_if, data_mem_if, &clint, loader.get_entrypoint(), rv64_align_address(GlobalParams::mem_end_addr));
-	sys.init(mem.data, GlobalParams::mem_start_addr, loader.get_heap_addr());
-	sys.register_core(&core);
+	loader->load_executable_image(mem->data, mem->size, GlobalParams::mem_start_addr);
+	core.init(instr_mem_if, data_mem_if, clint, loader->get_entrypoint(), rv64_align_address(GlobalParams::mem_end_addr));
+	sys->init(mem->data, GlobalParams::mem_start_addr, loader->get_heap_addr());
+	sys->register_core(&core);
 
 	if (GlobalParams::intercept_syscalls)
-		core.sys = &sys;
+		core.sys = sys;
 
 	// setup port mapping
-	bus.ports[0] = new PortMapping(GlobalParams::mem_start_addr, GlobalParams::mem_end_addr);
-	bus.ports[1] = new PortMapping(GlobalParams::clint_start_addr, GlobalParams::clint_end_addr);
-	bus.ports[2] = new PortMapping(GlobalParams::sys_start_addr, GlobalParams::sys_end_addr);
+	bus->ports[0] = new PortMapping(GlobalParams::mem_start_addr, GlobalParams::mem_end_addr);
+	bus->ports[1] = new PortMapping(GlobalParams::clint_start_addr, GlobalParams::clint_end_addr);
+	bus->ports[2] = new PortMapping(GlobalParams::sys_start_addr, GlobalParams::sys_end_addr);
 
 	// connect TLM sockets
-	core_mem_if.isock.bind(bus.tsocks[0]);
-	dbg_if.isock.bind(bus.tsocks[1]);
-	bus.isocks[0].bind(mem.tsock);
-	bus.isocks[1].bind(clint.tsock);
-	bus.isocks[2].bind(sys.tsock);
+	core_mem_if->isock.bind(bus->tsocks[0]);
+	dbg_if->isock.bind(bus->tsocks[1]);
+	bus->isocks[0].bind(mem->tsock);
+	bus->isocks[1].bind(clint->tsock);
+	bus->isocks[2].bind(sys->tsock);
 
 	// connect interrupt signals/communication
-	clint.target_harts[0] = &core;
+	clint->target_harts[0] = &core;
 
 	// switch for printing instructions
 	core.trace = GlobalParams::pe_trace_mode;
 
     // engine
-    std::string dma_name = std::string("dma_ctrl[") + to_string(i) + "," + to_string(j) + std::string("]");
-    DMACTRL *dma_ctrl = new DMACTRL(dma_name.c_str());
+    DMACTRL *dma_ctrl = new DMACTRL(MODULE_NAME(DMACTRL,i,j));
 
     core.dma_ctrl = dma_ctrl;
 }
@@ -132,7 +151,8 @@ int sc_main(int arg_num, char *arg_vet[])
     sc_clock clock("clock", GlobalParams::clock_period_ps, SC_PS);
     sc_signal <bool> reset;
 
-	// tlm::tlm_global_quantum::instance().set(sc_core::sc_time(GlobalParams::tlm_global_quantum, sc_core::SC_NS));
+    std::atomic<int> nr_done;
+    nr_done = 0;
 
     // NoC instance
     n = new NoC("NoC");
@@ -148,12 +168,20 @@ int sc_main(int arg_num, char *arg_vet[])
             n->t[i][j]->pe->core = new ISS(core_name.c_str(), core_id);
             n->t[i][j]->pe->core->clock(clock);
             n->t[i][j]->pe->core->reset(reset);
+            n->t[i][j]->pe->core->nr_done = &nr_done;
             config_core(*(n->t[i][j]->pe->core), i, j);
 
             n->t[i][j]->pe->local_isock.bind(n->t[i][j]->pe->core->dma_ctrl->local_tsock);
             n->t[i][j]->pe->core->dma_ctrl->local_isock.bind(n->t[i][j]->pe->local_tsock);
         }
     }
+
+    // Runner instance
+    Runner runner("runnner");
+    runner.clock(clock);
+    runner.reset(reset);
+    runner.nr_done = &nr_done;
+    runner.nr_cores = GlobalParams::mesh_dim_x * GlobalParams::mesh_dim_y;
 
     // Trace signals
     sc_trace_file *tf = NULL;
@@ -198,10 +226,12 @@ int sc_main(int arg_num, char *arg_vet[])
 
     reset.write(0);
     cout << " done! " << std::endl;
-    cout << " Now running for " << GlobalParams:: simulation_time << " cycles..." << std::endl;
+    // cout << " Now running for " << GlobalParams:: simulation_time << " cycles..." << std::endl;
+    cout << " Now running until all cores done " << std::endl;
     // fix clock periods different from 1ns
     //sc_start(GlobalParams::simulation_time, SC_NS);
-    sc_start(GlobalParams::simulation_time * GlobalParams::clock_period_ps, SC_PS);
+    // sc_start(GlobalParams::simulation_time * GlobalParams::clock_period_ps, SC_PS);
+    sc_start();
 
 
     // Close the simulation
