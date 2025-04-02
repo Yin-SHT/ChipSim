@@ -77,7 +77,7 @@ void ProcessingElement::dma_b_transport(tlm_generic_payload& trans, sc_time& del
 	int res_2  = data_ptr[2];
 	int res_3  = data_ptr[3];
 
-	assert(dst_id < 16);
+	assert(dst_id < GlobalParams::mesh_dim_x * GlobalParams::mesh_dim_y);
 
 	// extract payload
 	uint8_t *payload = data_ptr + FLIT_SIZE;
@@ -86,8 +86,9 @@ void ProcessingElement::dma_b_transport(tlm_generic_payload& trans, sc_time& del
 
     // create packet
 	Packet packet;
+	int vc = randInt(0, GlobalParams::n_virtual_channels - 1);
 	double now = sc_time_stamp().to_double() / GlobalParams::clock_period_ps;
-	packet.make(local_id, dst_id, 0, now, nr_flit, payload, payload_byte);
+	packet.make(local_id, dst_id, vc, now, nr_flit, payload, payload_byte);
 
     // push packet to packet_queue
     packet_queue.push(packet);

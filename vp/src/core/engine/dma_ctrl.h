@@ -14,6 +14,10 @@ using namespace tlm;
 
 class DMACTRL : public sc_module {
    public:
+	// I/O Ports
+	sc_in_clk clock;    // The input clock for the DMACTRL
+	sc_in<bool> reset;  // The reset signal for the DMACTRL
+
 	tlm_utils::simple_target_socket<DMACTRL> local_tsock;
 	tlm_utils::simple_initiator_socket<DMACTRL> local_isock;
 
@@ -26,6 +30,10 @@ class DMACTRL : public sc_module {
 
 	SC_CTOR(DMACTRL) {
 		local_tsock.register_b_transport(this, &DMACTRL::router_b_transport);
+
+		SC_METHOD(sentry);
+		sensitive << reset;
+		sensitive << clock.pos();
 
 		SC_THREAD(send_hello_world);
 		
@@ -48,9 +56,17 @@ class DMACTRL : public sc_module {
 		router_data_buffer.clear();
 	}
 
+	void sentry() {
+		if (!reset.read()) {
+			send_hello_event.notify();
+		}
+	}
+
 	int i = 1;
 
 	void send_hello_world() {
+		wait(send_hello_event);
+
 		while (true) {
 			wait(send_interval);
 
@@ -88,8 +104,8 @@ class DMACTRL : public sc_module {
 			local_isock->b_transport(trans, delay);
 			
 			if (trans.get_response_status() == TLM_OK_RESPONSE) {
-				std::cout << "Success send to router: " << message << std::endl; 
-				if (i == 16)
+				std::cout << name() << "Success send to router (dst_id: " << dst_id << "): " << message << std::endl; 
+				if (i == 256)
 					break;
 			}
 		}

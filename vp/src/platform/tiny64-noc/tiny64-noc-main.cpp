@@ -171,6 +171,9 @@ int sc_main(int arg_num, char *arg_vet[])
             n->t[i][j]->pe->core->nr_done = &nr_done;
             config_core(*(n->t[i][j]->pe->core), i, j);
 
+            n->t[i][j]->pe->core->dma_ctrl->clock(clock);
+            n->t[i][j]->pe->core->dma_ctrl->reset(reset);
+
             n->t[i][j]->pe->local_isock.bind(n->t[i][j]->pe->core->dma_ctrl->local_tsock);
             n->t[i][j]->pe->core->dma_ctrl->local_isock.bind(n->t[i][j]->pe->local_tsock);
         }
@@ -232,7 +235,6 @@ int sc_main(int arg_num, char *arg_vet[])
     //sc_start(GlobalParams::simulation_time, SC_NS);
     // sc_start(GlobalParams::simulation_time * GlobalParams::clock_period_ps, SC_PS);
     sc_start();
-
 
     // Close the simulation
     if (GlobalParams::noc_trace_mode) sc_close_vcd_trace_file(tf);
