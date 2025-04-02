@@ -5,6 +5,7 @@
 #include <tlm_utils/simple_initiator_socket.h>
 #include <tlm_utils/simple_target_socket.h>
 
+#include <atomic>
 #include <cstring>
 #include <systemc>
 
@@ -20,6 +21,8 @@ class SPU : public sc_core::sc_module {
 
 	sc_fifo<Fileds*> cmd_queue;
 
+	std::atomic<uint32_t> *long_instr_complete;
+
 	uint8_t* hp_data = nullptr;
 	uint8_t* lp_data = nullptr;
 	uint8_t* w_data = nullptr;
@@ -33,7 +36,7 @@ class SPU : public sc_core::sc_module {
 	float* w_data_fp32 = nullptr;
 	float* acc_data_fp32 = nullptr;
 
-	SC_CTOR(SPU) : cmd_queue(16) {
+	SC_CTOR(SPU) : cmd_queue(16), long_instr_complete(nullptr) {
 		tsock.register_nb_transport_fw(this, &SPU::nb_transport_fw);
 
 		SC_THREAD(sentry);
@@ -257,7 +260,7 @@ class SPU : public sc_core::sc_module {
 				decode_execute(*fileds);
 				delete fileds;
 
-				// core.long_instr_complete++;
+				(*long_instr_complete) ++;
 			}
 
 			wait(10, sc_core::SC_NS);  // Simulate interval between instructions

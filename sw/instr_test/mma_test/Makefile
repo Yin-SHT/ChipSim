@@ -1,14 +1,14 @@
 CURRENT_DIR := $(shell pwd)
 
-TOOLCHAIN_PREFIX=/home/yin/riscv/bin
+TOOLCHAIN_PREFIX=/home/yin/riscv-full/bin
 VP_PATH=/home/yin/code/riscv-vp/vp/build/bin
 CONFIG_PATH=/home/yin/code/riscv-vp/vp/src/noxim/config_examples
 
-all : main.c sum.c bootstrap.S
-	$(TOOLCHAIN_PREFIX)/riscv64-unknown-elf-gcc main.c sum.c bootstrap.S -o main -march=rv64g -mabi=lp64d -nostartfiles -Wl,--no-relax
+all : main.c bootstrap.S
+	$(TOOLCHAIN_PREFIX)/riscv64-unknown-elf-gcc main.c bootstrap.S -o main -march=rv64g -mabi=lp64d -nostartfiles -Wl,--no-relax
 	
 sim: all
-	$(VP_PATH)/tiny64-vp --intercept-syscalls main
+	$(VP_PATH)/tiny64-vp --intercept-syscalls  main
 	
 dump-elf: all
 	$(TOOLCHAIN_PREFIX)/riscv64-unknown-elf-readelf -a main

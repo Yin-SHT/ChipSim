@@ -1278,7 +1278,7 @@ void ISS::exec_step() {
 					
 					trans.set_command(TLM_WRITE_COMMAND);
 					trans.set_data_ptr(fileds);
-					
+					printf("Send!\n");
 					isock->b_transport(trans, delay);
 					
 					if (trans.get_response_status() == TLM_OK_RESPONSE) {
@@ -1296,7 +1296,7 @@ void ISS::exec_step() {
 					}
 				}
 			} 
-		}
+		} break;
 		// idagi Extension End
 
 			// privileged instructions

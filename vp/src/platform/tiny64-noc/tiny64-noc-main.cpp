@@ -142,6 +142,10 @@ void config_core(ISS &core, int i, int j) {
     ae->isock.bind(sharedmem->tsocks[2]);
     spu->isock.bind(sharedmem->tsocks[3]);
 
+    dma_ctrl->long_instr_complete = &(core.long_instr_complete);
+    ae->long_instr_complete = &(core.long_instr_complete);
+    spu->long_instr_complete = &(core.long_instr_complete);
+
     core.dma_ctrl = dma_ctrl;
 }
 

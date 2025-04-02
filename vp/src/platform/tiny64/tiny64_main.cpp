@@ -168,6 +168,10 @@ int sc_main(int argc, char **argv) {
 	dma_ctrl->local_isock.bind(dummy->tsock);
 	dummy->isock.bind(dma_ctrl->local_tsock);
 
+    dma_ctrl->long_instr_complete = &(core.long_instr_complete);
+    ae->long_instr_complete = &(core.long_instr_complete);
+    spu->long_instr_complete = &(core.long_instr_complete);
+
 	std::vector<debug_target_if *> threads;
 	threads.push_back(&core);
 

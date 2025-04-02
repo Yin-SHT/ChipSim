@@ -5,6 +5,7 @@
 #include <tlm_utils/simple_initiator_socket.h>
 #include <tlm_utils/simple_target_socket.h>
 
+#include <atomic>
 #include <systemc>
 #include <vector>
 #include <string>
@@ -23,6 +24,8 @@ class DMACTRL : public sc_core::sc_module {
 
 	tlm_utils::simple_target_socket<DMACTRL> local_tsock;
 	tlm_utils::simple_initiator_socket<DMACTRL> local_isock;
+
+	std::atomic<uint32_t> *long_instr_complete;
 
 	// reserve data from Router
 	std::vector<uint8_t> router_data_buffer;
