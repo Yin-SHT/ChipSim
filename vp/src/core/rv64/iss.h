@@ -14,6 +14,7 @@
 #include "debug.h"
 
 #include "core/engine/dma_ctrl.h"
+#include "core/engine/type.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -157,9 +158,6 @@ struct ISS : public sc_core::sc_module, public external_interrupt_target, public
 	PrivilegeLevel prv = MachineMode;
 	int64_t lr_sc_counter = 0;
 
-    // Engine
-    DMACTRL *dma_ctrl = nullptr;
-
 	// last decoded and executed instruction and opcode
 	Instruction instr;
 	Opcode::Mapping op;
@@ -187,6 +185,15 @@ struct ISS : public sc_core::sc_module, public external_interrupt_target, public
 	sc_core::sc_event start_event;
 
     std::atomic<int> *nr_done; // record the number of cores that have completed simulation
+
+    DMACTRL *dma_ctrl = nullptr;
+
+	tlm_utils::simple_initiator_socket<ISS> isock; // Connect with scheduler
+
+	IDAGIExtension idagi_ext; // Register extension
+
+	uint32_t long_instr_cnt; // Sync with engines
+    std::atomic<uint32_t> long_instr_complete; 
 
     SC_HAS_PROCESS(ISS);
 

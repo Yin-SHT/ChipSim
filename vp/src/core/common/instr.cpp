@@ -341,6 +341,11 @@ constexpr uint32_t FCVT_D_LU_ENCODING = 0b11010010001100000000000001010011;
 constexpr uint32_t FMV_D_X_MASK = 0b11111111111100000111000001111111;
 constexpr uint32_t FMV_D_X_ENCODING = 0b11110010000000000000000001010011;
 
+// idagi Extension Started 
+constexpr uint32_t IDAGI_SET_MASK = 0b00000000000000000000000001111111; 
+constexpr uint32_t IDAGI_SET_ENCODING = 0b00000000000000000000000001111011;
+// idagi Extension End 
+
 #define MATCH_AND_RETURN_INSTR2(instr, result)                     \
 	if (unlikely((data() & (instr##_MASK)) != (instr##_ENCODING))) \
 		return UNDEF;                                              \
@@ -599,6 +604,10 @@ std::array<const char *, Opcode::NUMBER_OF_INSTRUCTIONS> Opcode::mappingStr = {
     "FCVT_D_LU",
     "FMV_D_X",
 
+	// idagi Extension Start 
+    "IDAGI_SET",
+	// idagi Extension End 
+
     // privileged instructions
     "URET",
     "SRET",
@@ -762,6 +771,11 @@ Opcode::Type Opcode::getType(Opcode::Mapping mapping) {
 		case FNMSUB_D:
 		case FNMADD_D:
 			return Type::R4;
+
+		// idagi Extension Start 
+		case IDAGI_SET:
+			return Type::IDAGI;
+		// idagi Extension End 
 
 		default:
 			return Type::UNKNOWN;
@@ -1892,6 +1906,13 @@ Opcode::Mapping Instruction::decode_normal(Architecture arch) {
 					MATCH_AND_RETURN_INSTR(FNMADD_D);
 			}
 			break;
+		
+		// IDAGI Extension Start
+		case OP_CUST3: {
+			MATCH_AND_RETURN_INSTR(IDAGI_SET);
+			break;
+		}
+		// IDAGI Extension End
 	}
 
 	return UNDEF;

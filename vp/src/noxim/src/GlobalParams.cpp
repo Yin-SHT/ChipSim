@@ -28,6 +28,9 @@ addr_t GlobalParams::clint_start_addr;
 addr_t GlobalParams::clint_end_addr;
 addr_t GlobalParams::sys_start_addr;
 addr_t GlobalParams::sys_end_addr;
+addr_t GlobalParams::shared_mem_size;
+addr_t GlobalParams::shared_mem_start_addr;
+addr_t GlobalParams::shared_mem_end_addr;
 
 bool GlobalParams::quiet;
 bool GlobalParams::use_E_base_isa;

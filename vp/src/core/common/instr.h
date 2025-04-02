@@ -226,6 +226,8 @@ enum Parts {
 	F2_FNMADD_D = 0b01,
 
 	// reserved opcodes for custom instructions
+	OP_CUST3 = 0b1111011,
+
 	OP_CUST1 = 0b0101011,
 	OP_CUST0 = 0b0001011,
 };
@@ -413,6 +415,10 @@ enum Mapping {
 	FCVT_D_L,
 	FCVT_D_LU,
 	FMV_D_X,
+	
+	// idagi Extension Start
+	IDAGI_SET,
+	// idagi Extension End
 
 	// privileged instructions
 	URET,
@@ -434,6 +440,7 @@ enum class Type {
 	U,
 	J,
 	R4,
+	IDAGI,
 };
 
 extern std::array<const char*, NUMBER_OF_INSTRUCTIONS> mappingStr;
@@ -623,6 +630,17 @@ struct Instruction {
 	inline uint32_t data() {
 		return instr;
 	}
+
+		// idagi Extension Start
+	inline uint32_t idagi_rd() {
+		return (BIT_RANGE((uint32_t)instr, 16, 7) >> 7);
+	}
+
+	inline uint32_t idagi_imm() {
+		return (BIT_RANGE((uint32_t)instr, 30, 17) >> 17);
+	}
+	// idagi Extension End
+
 
    private:
 	// use signed variable to have correct sign extension in immediates

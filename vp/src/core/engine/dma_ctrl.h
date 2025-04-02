@@ -12,11 +12,14 @@
 using namespace sc_core;
 using namespace tlm;
 
-class DMACTRL : public sc_module {
+class DMACTRL : public sc_core::sc_module {
    public:
 	// I/O Ports
 	sc_in_clk clock;    // The input clock for the DMACTRL
 	sc_in<bool> reset;  // The reset signal for the DMACTRL
+
+	tlm_utils::simple_target_socket<DMACTRL> tsock;
+	tlm_utils::simple_initiator_socket<DMACTRL> isock;
 
 	tlm_utils::simple_target_socket<DMACTRL> local_tsock;
 	tlm_utils::simple_initiator_socket<DMACTRL> local_isock;

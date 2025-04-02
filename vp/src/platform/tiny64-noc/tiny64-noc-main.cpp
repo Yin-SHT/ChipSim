@@ -14,7 +14,11 @@
 #include "DataStructs.h"
 #include "GlobalParams.h"
 
+#include "sharedmem.h"
+#include "scheduler.h"
 #include "dma_ctrl.h"
+#include "spu.h"
+#include "ae.h"
 
 #include <atomic>
 #include <csignal>
@@ -33,6 +37,7 @@
 #include "mmu.h"
 #include "syscall.h"
 
+#define MB * 1024 * 1024
 #define MODULE_NAME(MODULE,i,j) \
      (std::string(#MODULE "[" + std::to_string(i) + "," + std::to_string(j) + "]")).c_str()
 
@@ -79,7 +84,7 @@ void config_core(ISS &core, int i, int j) {
 	CombinedMemoryInterface *core_mem_if = new CombinedMemoryInterface(MODULE_NAME(CombinedMemoryInterface,i,j), core, *mmu);
 	SimpleMemory *mem = new SimpleMemory(MODULE_NAME(SimpleMemory,i,j), GlobalParams::mem_size);
 	ELFLoader *loader = new ELFLoader(GlobalParams::elf.c_str());
-	SimpleBus<2, 3> *bus = new SimpleBus<2, 3>(MODULE_NAME(SimpleBus,i,j));
+	SimpleBus<2, 4> *bus = new SimpleBus<2, 4>(MODULE_NAME(SimpleBus,i,j));
 	SyscallHandler *sys = new SyscallHandler(MODULE_NAME(SyscallHandler,i,j));
 	CLINT<1> *clint = new CLINT<1>(MODULE_NAME(CLINT,i,j));
 	DebugMemoryInterface *dbg_if = new DebugMemoryInterface(MODULE_NAME(DebugMemoryInterface,i,j));
@@ -106,6 +111,7 @@ void config_core(ISS &core, int i, int j) {
 	bus->ports[0] = new PortMapping(GlobalParams::mem_start_addr, GlobalParams::mem_end_addr);
 	bus->ports[1] = new PortMapping(GlobalParams::clint_start_addr, GlobalParams::clint_end_addr);
 	bus->ports[2] = new PortMapping(GlobalParams::sys_start_addr, GlobalParams::sys_end_addr);
+	bus->ports[3] = new PortMapping(GlobalParams::shared_mem_start_addr, GlobalParams::shared_mem_end_addr);
 
 	// connect TLM sockets
 	core_mem_if->isock.bind(bus->tsocks[0]);
@@ -121,7 +127,20 @@ void config_core(ISS &core, int i, int j) {
 	core.trace = GlobalParams::pe_trace_mode;
 
     // engine
-    DMACTRL *dma_ctrl = new DMACTRL(MODULE_NAME(DMACTRL,i,j));
+    SharedMemory<4> *sharedmem = new SharedMemory<4>(MODULE_NAME(SharedMemory, i, j), 1 MB);
+    Scheduler *scheduler = new Scheduler(MODULE_NAME(Scheduler, i, j));
+    DMACTRL *dma_ctrl = new DMACTRL(MODULE_NAME(DMACTRL, i, j));
+    AE *ae = new AE(MODULE_NAME(AE, i, j));
+    SPU *spu = new SPU(MODULE_NAME(SPU, i, j));
+
+    bus->isocks[3].bind(sharedmem->tsocks[0]);
+	core.isock.bind(scheduler->tsock);
+    scheduler->dma_isock.bind(dma_ctrl->tsock);
+    scheduler->ae_isock.bind(ae->tsock);
+    scheduler->spu_isock.bind(spu->tsock);
+    dma_ctrl->isock.bind(sharedmem->tsocks[1]);
+    ae->isock.bind(sharedmem->tsocks[2]);
+    spu->isock.bind(sharedmem->tsocks[3]);
 
     core.dma_ctrl = dma_ctrl;
 }

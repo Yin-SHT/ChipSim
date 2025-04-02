@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <ctime>
 
+
 #include "core/common/clint.h"
 #include "elf_loader.h"
 #include "debug_memory.h"
@@ -10,6 +11,13 @@
 #include "mmu.h"
 #include "syscall.h"
 #include "platform/common/options.h"
+
+#include "sharedmem.h"
+#include "scheduler.h"
+#include "dma_ctrl.h"
+#include "spu.h"
+#include "ae.h"
+#include "dummy.h"
 
 #include "gdb-mc/gdb_server.h"
 #include "gdb-mc/gdb_runner.h"
@@ -21,6 +29,8 @@
 
 using namespace rv64;
 namespace po = boost::program_options;
+
+#define MB * 1024 * 1024
 
 struct Runner : public sc_core::sc_module {
 	sc_in_clk clock;    
@@ -55,6 +65,9 @@ public:
 	addr_t clint_end_addr = 0x0200ffff;
 	addr_t sys_start_addr = 0x02010000;
 	addr_t sys_end_addr = 0x020103ff;
+	addr_t shared_mem_size = 1024 * 1024 * 1;  
+	addr_t shared_mem_start_addr = 0x03000000;
+	addr_t shared_mem_end_addr = 0x03100000 - 1;
 
 	bool quiet = false;
 	bool use_E_base_isa = false;
@@ -83,12 +96,12 @@ int sc_main(int argc, char **argv) {
 
 	tlm::tlm_global_quantum::instance().set(sc_core::sc_time(opt.tlm_global_quantum, sc_core::SC_NS));
 
-	ISS core("core_0", 0);
+	ISS core("core", 0);
 	MMU mmu(core);
 	CombinedMemoryInterface core_mem_if("MemoryInterface0", core, mmu);
 	SimpleMemory mem("SimpleMemory", opt.mem_size);
 	ELFLoader loader(opt.input_program.c_str());
-	SimpleBus<2, 3> bus("SimpleBus");
+	SimpleBus<2, 4> bus("SimpleBus");
 	SyscallHandler sys("SyscallHandler");
 	CLINT<1> clint("CLINT");
 	DebugMemoryInterface dbg_if("DebugMemoryInterface");
@@ -120,6 +133,7 @@ int sc_main(int argc, char **argv) {
 	bus.ports[0] = new PortMapping(opt.mem_start_addr, opt.mem_end_addr);
 	bus.ports[1] = new PortMapping(opt.clint_start_addr, opt.clint_end_addr);
 	bus.ports[2] = new PortMapping(opt.sys_start_addr, opt.sys_end_addr);
+	bus.ports[3] = new PortMapping(opt.shared_mem_start_addr , opt.shared_mem_end_addr);
 
 	// connect TLM sockets
 	core_mem_if.isock.bind(bus.tsocks[0]);
@@ -133,6 +147,26 @@ int sc_main(int argc, char **argv) {
 
 	// switch for printing instructions
 	core.trace = opt.trace_mode;
+
+    // engine
+    SharedMemory<4> *sharedmem = new SharedMemory<4>("SharedMemory", 1 MB);
+    Scheduler *scheduler = new Scheduler("Scheduler");
+    DMACTRL *dma_ctrl = new DMACTRL("DMACTRL");
+    AE *ae = new AE("AE");
+    SPU *spu = new SPU("SPU");
+	Dummy *dummy = new Dummy("Dummy");
+
+    bus.isocks[3].bind(sharedmem->tsocks[0]);
+	core.isock.bind(scheduler->tsock);
+    scheduler->dma_isock.bind(dma_ctrl->tsock);
+    scheduler->ae_isock.bind(ae->tsock);
+    scheduler->spu_isock.bind(spu->tsock);
+    dma_ctrl->isock.bind(sharedmem->tsocks[1]);
+    ae->isock.bind(sharedmem->tsocks[2]);
+    spu->isock.bind(sharedmem->tsocks[3]);
+
+	dma_ctrl->local_isock.bind(dummy->tsock);
+	dummy->isock.bind(dma_ctrl->local_tsock);
 
 	std::vector<debug_target_if *> threads;
 	threads.push_back(&core);
@@ -154,6 +188,9 @@ int sc_main(int argc, char **argv) {
 	core.clock(clock);
 	core.reset(reset);
 	core.nr_done = &nr_done;
+
+	dma_ctrl->clock(clock);
+	dma_ctrl->reset(reset);
 
     // Runner instance
     Runner runner("runnner");

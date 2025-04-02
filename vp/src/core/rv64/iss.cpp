@@ -119,6 +119,9 @@ ISS::ISS(sc_core::sc_module_name name, uint64_t hart_id) : systemc_name(name) {
 	instr_cycles[Opcode::REM] = mul_div_cycles;
 	instr_cycles[Opcode::REMU] = mul_div_cycles;
 
+	long_instr_cnt = 0; 
+ 	long_instr_complete = 0; 
+
 	SC_METHOD(run_wrapper);
 	sensitive << reset;
 	sensitive << clock.pos();
@@ -1247,6 +1250,54 @@ void ISS::exec_step() {
 			fp_regs.write(RD, ui64_to_f64(regs[RS1]));
 			fp_finish_instr();
 		} break;
+
+        // idagi Extension Start
+		case Opcode::IDAGI_SET: {
+			uint32_t rd = instr.idagi_rd();
+			uint32_t imm = instr.idagi_imm();
+
+			assert(rd < 54);
+
+			// 0 < rd < 54: set normaly
+			if (rd < 54) {
+				idagi_ext.regs[rd] = imm;
+			}
+
+			// rd == 0: fire/sync
+			if (rd == 0) {
+				// imm == 0: fire
+				if (imm == 0) {
+					idagi_ext.regs[0] = 0;
+	
+					long_instr_cnt ++;
+					uint8_t* fileds = idagi_ext.build_fileds();
+					
+					// Create transaction
+					tlm_generic_payload trans;
+					sc_time delay = SC_ZERO_TIME;
+					
+					trans.set_command(TLM_WRITE_COMMAND);
+					trans.set_data_ptr(fileds);
+					
+					isock->b_transport(trans, delay);
+					
+					if (trans.get_response_status() == TLM_OK_RESPONSE) {
+						// TODO
+					}
+				}
+				// imm == 0x100: sync
+				if (imm == 0x100) {
+					printf("\033[32m Waiting ...\033[0m\n");
+					while (true) {
+						if (long_instr_cnt == long_instr_complete.load()) {
+							break;
+						}
+						wait(5, SC_NS);
+					}
+				}
+			} 
+		}
+		// idagi Extension End
 
 			// privileged instructions
 

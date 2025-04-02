@@ -159,6 +159,9 @@ struct GlobalParams {
 	static addr_t clint_end_addr;
 	static addr_t sys_start_addr;
 	static addr_t sys_end_addr;
+	static addr_t shared_mem_size;
+	static addr_t shared_mem_start_addr;
+	static addr_t shared_mem_end_addr;
 	static bool quiet;
 	static bool use_E_base_isa;
 

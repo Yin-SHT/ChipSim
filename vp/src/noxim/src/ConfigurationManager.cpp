@@ -78,6 +78,9 @@ void loadConfiguration() {
 	GlobalParams::clint_end_addr = readParam<addr_t>(pe_config, "clint_end_addr", 0x0200FFFF);
 	GlobalParams::sys_start_addr = readParam<addr_t>(pe_config, "sys_start_addr", 0x02010000);
 	GlobalParams::sys_end_addr = readParam<addr_t>(pe_config, "sys_end_addr", 0x0201FFFF);
+	GlobalParams::shared_mem_size = readParam<addr_t>(pe_config, "shared_mem_size", 1024 * 1024 * 1);  
+	GlobalParams::shared_mem_start_addr = readParam<addr_t>(pe_config, "shared_mem_start_addr", 0x03000000);
+	GlobalParams::shared_mem_end_addr = readParam<addr_t>(pe_config, "shared_mem_end_addr", 0x03100000);
 	GlobalParams::quiet = readParam<bool>(pe_config, "quiet", false);
 	GlobalParams::use_E_base_isa = readParam<bool>(pe_config, "use_E_base_isa", false);
 
