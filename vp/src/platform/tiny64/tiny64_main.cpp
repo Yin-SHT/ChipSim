@@ -22,6 +22,27 @@
 using namespace rv64;
 namespace po = boost::program_options;
 
+struct Runner : public sc_core::sc_module {
+	sc_in_clk clock;    
+	sc_in<bool> reset;  
+
+    std::atomic<int> *nr_done;
+    int nr_cores;
+
+    SC_CTOR(Runner) : nr_done(nullptr), nr_cores(0) {
+		SC_METHOD(run);
+		sensitive << reset;
+		sensitive << clock.pos();
+	}
+
+	void run() {
+        if (!reset.read()) {
+            if (*nr_done == nr_cores)
+                sc_stop();
+        }
+	}
+};
+
 struct TinyOptions : public Options {
 public:
 	typedef unsigned int addr_t;
@@ -72,8 +93,8 @@ int sc_main(int argc, char **argv) {
 	CLINT<1> clint("CLINT");
 	DebugMemoryInterface dbg_if("DebugMemoryInterface");
 
-	MemoryDMI dmi = MemoryDMI::create_start_size_mapping(mem.data, opt.mem_start_addr, mem.size);
-	InstrMemoryProxy instr_mem(dmi, core);
+	MemoryDMI *dmi = MemoryDMI::create_start_size_mapping(mem.data, opt.mem_start_addr, mem.size);
+	InstrMemoryProxy instr_mem(*dmi, core);
 
 	std::shared_ptr<BusLock> bus_lock = std::make_shared<BusLock>();
 	core_mem_if.bus_lock = bus_lock;
@@ -84,7 +105,7 @@ int sc_main(int argc, char **argv) {
 	if (opt.use_instr_dmi)
 		instr_mem_if = &instr_mem;
 	if (opt.use_data_dmi) {
-		core_mem_if.dmi_ranges.emplace_back(dmi);
+		core_mem_if.dmi_ranges.emplace_back(*dmi);
 	}
 
 	loader.load_executable_image(mem.data, mem.size, opt.mem_start_addr);
@@ -116,15 +137,42 @@ int sc_main(int argc, char **argv) {
 	std::vector<debug_target_if *> threads;
 	threads.push_back(&core);
 
-	if (opt.use_debug_runner) {
-		auto server = new GDBServer("GDBServer", threads, &dbg_if, opt.debug_port);
-		new GDBServerRunner("GDBRunner", server, &core);
-	} else {
-		new DirectCoreRunner(core);
-	}
+	// if (opt.use_debug_runner) {
+	// 	auto server = new GDBServer("GDBServer", threads, &dbg_if, opt.debug_port);
+	// 	new GDBServerRunner("GDBRunner", server, &core);
+	// } else {
+	// 	new DirectCoreRunner(core);
+	// }
+
+    // Signals
+    sc_clock clock("clock", 1000, SC_PS); // 1000 ps == 1 ns
+    sc_signal <bool> reset;
+
+    std::atomic<int> nr_done;
+    nr_done = 0;
+
+	core.clock(clock);
+	core.reset(reset);
+	core.nr_done = &nr_done;
+
+    // Runner instance
+    Runner runner("runnner");
+    runner.clock(clock);
+    runner.reset(reset);
+    runner.nr_done = &nr_done;
+    runner.nr_cores = 1;
+
+    // Reset the chip and run the simulation
+    reset.write(1);
+    std::cout << "Reset for " << 1000 << " cycles... " << std::endl; 
+    sc_start(100 * 1000, SC_PS);
+
+    reset.write(0);
+    std::cout << " done! " << std::endl;
+    std::cout << " Now running until core done " << std::endl;
 
 	if (opt.quiet)
-		 sc_core::sc_report_handler::set_verbosity_level(sc_core::SC_NONE);
+		sc_core::sc_report_handler::set_verbosity_level(sc_core::SC_NONE);
 
 	sc_core::sc_start();
 	if (!opt.quiet) {

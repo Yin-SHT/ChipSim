@@ -104,7 +104,7 @@ class DMACTRL : public sc_module {
 			local_isock->b_transport(trans, delay);
 			
 			if (trans.get_response_status() == TLM_OK_RESPONSE) {
-				std::cout << name() << "Success send to router (dst_id: " << dst_id << "): " << message << std::endl; 
+				std::cout << name() << "Success send to router (dst_id: " << (int)dst_id << "): " << message << std::endl; 
 				if (i == 256)
 					break;
 			}
