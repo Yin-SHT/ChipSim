@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "csignal": "cpp"
+        "csignal": "cpp",
+        "new": "cpp"
     }
 }
