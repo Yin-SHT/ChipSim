@@ -19,6 +19,7 @@ using namespace tlm;
 enum DMACTRLState {
 	IDLE,
 	SEND,
+	SEND2,
 	RECV
 };
 
@@ -90,6 +91,10 @@ public:
 			case SEND:
 				handle_send_state();
 				break;
+
+			case SEND2:
+				handle_send_state2();
+				break;
 				
 			case RECV:
 				handle_recv_state();
@@ -159,6 +164,34 @@ public:
             // Return to IDLE state
             std::cout << "\033[1;31m" << name() << ": Has Send\033[0m" << std::endl;
             has_send = true;
+            current_state = SEND2;
+        }
+	}
+
+	// Handle SEND state: send transaction through local_isock
+	void handle_send_state2() {
+        // Create a header
+        Header header;
+        header.dst_id = 0;
+        header.hbm_id = -1;
+        header.cmd = TLM_READ_COMMAND;
+        header.addr = 0;
+        header.len = 12;
+
+        // Create a tlm_generic_payload
+        tlm_generic_payload trans;
+        sc_time delay = SC_ZERO_TIME;
+
+        trans.set_data_ptr(reinterpret_cast<unsigned char*>(&header));
+        trans.set_data_length(sizeof(Header));
+        
+        // Send transaction through local_isock
+        local_isock->b_transport(trans, delay);
+        
+        // Check transaction status
+        if (trans.get_response_status() == TLM_OK_RESPONSE) {
+            // Return to IDLE state
+            std::cout << "\033[1;31m" << name() << ": Has Send\033[0m" << std::endl;
             current_state = IDLE;
         }
 	}
@@ -166,7 +199,11 @@ public:
 	// Handle RECV state: process data received from local_tsock
 	void handle_recv_state() {
         // Process received data (can be extended based on actual requirements)
-        std::cout << name() << ": Processing received data, size: " << router_data_buffer.size() << " bytes" << std::endl;
+        std::cout << "\033[1;33m" << name() << ": Processing received data, size: " << router_data_buffer.size() << " bytes" << "\033[0m" << std::endl;
+        for (uint8_t byte : router_data_buffer) {
+            printf("\033[1;33m%c\033[0m", byte);
+        }
+        printf("\n");
         
         // Reset flag
         has_received_local_trans = false;

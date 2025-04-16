@@ -110,7 +110,7 @@ void ProcessingElement::dma_b_transport(tlm_generic_payload& trans, sc_time& del
 	Header header;
 	memcpy(&header, raw_data, sizeof(Header));
 	int dst_id = header.hbm_id ? header.hbm_id : header.dst_id;    // HBM ID != 0 means HBM transaction 
-	int nr_body_flits = (header.len + FLIT_SIZE - 1) / FLIT_SIZE;  // Ceiling division
+	int nr_body_flits = header.cmd == TLM_WRITE_COMMAND ? (header.len + FLIT_SIZE - 1) / FLIT_SIZE : 0;  // Ceiling division
 	int nr_flit = 1 + nr_body_flits + 1;  // head_flit + body_flits + tail_flit
 	
 	Packet packet;
@@ -191,6 +191,8 @@ Flit ProcessingElement::nextFlit() {
         int start_idx = (flit.sequence_no - 1) * FLIT_SIZE;
         int remaining_bytes = packet.len - start_idx;
         int copy_size = (remaining_bytes < FLIT_SIZE) ? remaining_bytes : FLIT_SIZE;
+
+        flit.addr += start_idx;
 
         if (copy_size > 0) {
             memcpy(flit.data, packet.data + start_idx, copy_size);

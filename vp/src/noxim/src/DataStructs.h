@@ -170,9 +170,10 @@ struct Flit {
 
     tlm::tlm_command cmd;       
     uint64_t addr;
+    int len;
+
 	uint8_t data[FLIT_SIZE];   // Actual data
     int valid_len;             // Valid length of data
-    int len;
 
 	inline bool operator==(const Flit &flit) const {
 		return (flit.src_id == src_id && flit.dst_id == dst_id && flit.flit_type == flit_type && flit.vc_id == vc_id &&

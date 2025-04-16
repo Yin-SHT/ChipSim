@@ -35,9 +35,9 @@ void HBM_CTRL::rxProcess() {
         if (req_rx.read() == 1 - current_level_rx) {
             Flit received_flit = flit_rx.read();
 
-            if (!request.IsFull()) {
+            if (!flits_buffer.IsFull()) {
                 // Store the incoming flit in the circular buffer
-                request.Push(received_flit);
+                flits_buffer.Push(received_flit);
 
                 // Negate the old value for Alternating Bit Protocol (ABP)
                 current_level_rx = 1 - current_level_rx;
@@ -132,7 +132,6 @@ void HBM_CTRL::handleHBM() {
     // Define HBM controller state enumeration
     enum HBMState {
         HBM_IDLE,
-        HBM_WRITE,
         HBM_READ
     };
     
@@ -151,146 +150,72 @@ void HBM_CTRL::handleHBM() {
     tlm::tlm_generic_payload trans;
     sc_core::sc_time delay = sc_core::SC_ZERO_TIME;
     
-    // Check if request buffer is empty
-    if (request.IsEmpty()) {
-        return; // No requests to process
+    // Check if flits_buffer is empty
+    if (flits_buffer.IsEmpty()) {
+        return; // No flits to process
     }
     
-    // Get the first flit from the request queue
-    Flit request_flit = request.Front();
+    // Get the first flit from the flits_buffer
+    Flit flit = flits_buffer.Front();
     
-    // Process request based on current state
+    // Process flits_buffer based on current state
     switch (state) {
         case HBM_IDLE:
             {
-                // Defensive programming: ensure IDLE state receives HEAD type flit
-                assert(request_flit.flit_type == FLIT_TYPE_HEAD && "Must receive HEAD type FLIT in IDLE state");
-            
-                // Save transaction information
-                current_cmd = request_flit.cmd;
-                current_addr = request_flit.addr;
-                remaining_len = request_flit.len;
-                src_id = request_flit.src_id;
-                dst_id = request_flit.dst_id;
-                vc_id = request_flit.vc_id;
-                timestamp = request_flit.timestamp;
-                hop_no = request_flit.hop_no;
-                current_sequence_no = 0;
-                
-                // Calculate response sequence length (for read operations)
-                if (current_cmd == tlm::TLM_READ_COMMAND) {
-                    total_sequence_length = (remaining_len + FLIT_SIZE - 1) / FLIT_SIZE;
-                }
-                
-                // Transition state based on command type
-                if (current_cmd == tlm::TLM_WRITE_COMMAND) {
-                    state = HBM_WRITE;
-                } else if (current_cmd == tlm::TLM_READ_COMMAND) {
+                if (flit.flit_type == FLIT_TYPE_HEAD && flit.cmd == tlm::TLM_READ_COMMAND) {
                     state = HBM_READ;
-                }
-                
-                // Remove processed request
-                request.Pop();
-            }
-            break;
-            
-        case HBM_WRITE:
-            {
-                /* 
-                 * HBM Write Transaction Request
-                 * 
-                 * head flit: cmd, addr, len
-                 * body flit: data0
-                 * body flit: data1
-                 * ...
-                 * body flit: dataN
-                 * tail flit: end of all flits
-                */
 
-                // Defensive programming: ensure WRITE state receives BODY or TAIL type flit
-                std::cout << "\033[1;33m" << name() << "\033[0m" << std::endl;
-                assert((request_flit.flit_type == FLIT_TYPE_BODY || request_flit.flit_type == FLIT_TYPE_TAIL) && 
-                       "Must receive BODY or TAIL type FLIT in WRITE state");
-                
-                // If TAIL type flit or remaining length is 0, return to IDLE state
-                if (request_flit.flit_type == FLIT_TYPE_TAIL) {
-                    // Remove TAIL marker flit from request buffer
-                    assert(remaining_len == 0 && "Remaining length should be 0 for TAIL type flit");
-                    request.Pop();
-
-                    state = HBM_IDLE;
-
-                    break;
-                }
-
-                // Calculate bytes to write this time
-                int bytes_to_write = min(remaining_len, FLIT_SIZE);
-                assert(bytes_to_write == request_flit.valid_len);
-
-                // Set transaction parameters
-                trans.set_command(tlm::TLM_WRITE_COMMAND);
-                trans.set_address(current_addr);
-                trans.set_data_length(bytes_to_write);
-                
-                // Allocate and prepare write data
-                uint8_t* data_ptr = new uint8_t[bytes_to_write];
-                memcpy(data_ptr, request_flit.data, bytes_to_write);
-                trans.set_data_ptr(data_ptr);
-                
-                // Send write transaction to HBM
-                hbm_socket->b_transport(trans, delay);
-                
-                // Free allocated memory
-                delete[] data_ptr;
-                
-                // Check if transaction was successful
-                if (trans.get_response_status() == tlm::TLM_OK_RESPONSE) {
-                    // Update address and remaining length
-                    current_addr += bytes_to_write;
-                    remaining_len -= bytes_to_write;
+                    // Save transaction information
+                    current_cmd = flit.cmd;
+                    current_addr = flit.addr;
+                    remaining_len = flit.len;
+                    total_sequence_length = 1 + ((remaining_len + FLIT_SIZE - 1) / FLIT_SIZE) + 1;
+                    src_id = flit.src_id;
+                    dst_id = flit.dst_id;
+                    vc_id = flit.vc_id;
+                    timestamp = flit.timestamp;
+                    hop_no = flit.hop_no;
+                    current_sequence_no = 0;
+                } else if (flit.flit_type == FLIT_TYPE_BODY && flit.cmd == tlm::TLM_WRITE_COMMAND) {
+                    // Set transaction parameters
+                    trans.set_command(flit.cmd);
+                    trans.set_address(flit.addr);
+                    trans.set_data_length(flit.valid_len);
                     
-                    // Remove processed request
-                    request.Pop();
+                    // Allocate and prepare write data
+                    uint8_t* data_ptr = new uint8_t[flit.valid_len];
+                    memcpy(data_ptr, flit.data, flit.valid_len);
+                    trans.set_data_ptr(data_ptr);
+                    
+                    // Send write transaction to HBM
+                    hbm_socket->b_transport(trans, delay);
+                    
+                    // Free allocated memory
+                    delete[] data_ptr;
+                    
+                    if (trans.get_response_status() == tlm::TLM_OK_RESPONSE) {
+                        // Remove processed flit
+                        flits_buffer.Pop();
+                    }
+                } else if (flit.flit_type == FLIT_TYPE_HEAD && flit.cmd == tlm::TLM_WRITE_COMMAND) {
+                    // Remove head flit
+                    flits_buffer.Pop();
+                } else if (flit.flit_type == FLIT_TYPE_TAIL) {
+                    // Remove tail flit
+                    flits_buffer.Pop();
+                } else {
+                    assert(false && "Invalid flit type");
                 }
-                // If write failed, will try again next time
             }
             break;
             
         case HBM_READ:
             {
-                /* 
-                 * HBM Read Transaction Request
-                 * 
-                 * head flit: cmd, addr, len 
-                 * tail flit: --
-                 * 
-                 * HBM Read Transaction Response
-                 * 
-                 * head flit: cmd, addr, len
-                 * body flit: data0
-                 * body flit: data1
-                 * ...
-                 * body flit: dataN
-                 * tail flit: --
-                */
-
-                // Defensive programming: ensure READ state receives TAIL type flit
-                assert(request_flit.flit_type == FLIT_TYPE_TAIL && "Must receive TAIL type FLIT in READ state");
-                
-                // Check if all read operations are completed
-                if (remaining_len <= 0) {
-                    state = HBM_IDLE;
-
-                    // Remove TAIL marker flit from request buffer
-                    assert(request_flit.flit_type == FLIT_TYPE_TAIL);
-                    request.Pop();
-                
-                    break;
-                }
+                // Defensive programming
+                assert(current_cmd == tlm::TLM_READ_COMMAND);
                 
                 // Check if there is enough buffer space for response
                 if (buffer.IsFull()) {
-                    // If buffer is full, wait for next call
                     break;
                 }
                 
@@ -306,7 +231,7 @@ void HBM_CTRL::handleHBM() {
                 
                 // Create response flit
                 Flit response_flit;
-                response_flit.src_id = dst_id;  // Swap source and destination
+                response_flit.src_id = dst_id;
                 response_flit.dst_id = src_id;
                 response_flit.vc_id = vc_id;
                 response_flit.timestamp = timestamp;
@@ -341,6 +266,10 @@ void HBM_CTRL::handleHBM() {
                         // Update address and remaining length
                         current_addr += bytes_to_read;
                         remaining_len -= bytes_to_read;
+
+                        // Push response flit to send buffer
+                        buffer.Push(response_flit);
+                        current_sequence_no++;
                     }
                     
                     // Release allocated memory
@@ -349,19 +278,21 @@ void HBM_CTRL::handleHBM() {
                     // For HEAD and TAIL type flits, no actual data
                     // You can choose to clear the data area
                     memset(response_flit.data, 0, FLIT_SIZE);
+                    response_flit.valid_len = 0;
+
+                    // Push response flit to send buffer
+                    buffer.Push(response_flit);
+                    current_sequence_no++;
                 }
-                
-                // Push response flit to send buffer
-                buffer.Push(response_flit);
-                current_sequence_no++;
                 
                 // If all data has been read and TAIL flit has been sent, return to IDLE state
                 if (current_sequence_no >= total_sequence_length) {
+                    assert(!flits_buffer.IsEmpty());
+                    assert(flits_buffer.Front().flit_type == FLIT_TYPE_HEAD);
+                    assert(flits_buffer.Front().cmd == tlm::TLM_READ_COMMAND);
+
                     state = HBM_IDLE;
-                    
-                    // Remove TAIL marker flit from request buffer
-                    assert(request_flit.flit_type == FLIT_TYPE_TAIL);
-                    request.Pop();
+                    flits_buffer.Pop();
                 }
             }
             break;

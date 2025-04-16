@@ -47,8 +47,8 @@ SC_MODULE(HBM_CTRL)
     // Registers
 
     int local_id;		                    // Unique ID
-    Buffer request;                         // request buffer
-    Buffer buffer;		                    // buffer
+    Buffer flits_buffer;
+    Buffer buffer;
     bool current_level_rx;	                // Current level for Alternating Bit Protocol (ABP)
     bool current_level_tx;	                // Current level for Alternating Bit Protocol (ABP)
     ReservationTable reservation_table;		// Switch reservation table
