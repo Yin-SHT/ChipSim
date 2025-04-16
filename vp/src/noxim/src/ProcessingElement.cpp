@@ -9,93 +9,128 @@
  */
 
 #include <math.h>
-#include <algorithm>  // 添加 algorithm 头文件
+#include <algorithm>
+#include <mutex>
 
 #include "ProcessingElement.h"
+#include "DataStructs.h"
 
 int ProcessingElement::randInt(int min, int max) {
 	return min + (int)((double)(max - min + 1) * rand() / (RAND_MAX + 1.0));
 }
 
+/*
+ * Receive flits from the router, collect data from body flits,
+ * until the tail flit arrives and data collection is completed,
+ * then finally forward the data to DMACTRL
+*/
 void ProcessingElement::rxProcess() {
 	if (reset.read()) {
 		ack_rx.write(0);
 		current_level_rx = 0;
-		packet_buffer.clear();
+		data_buffer.clear();
 		current_packet_size = 0;
-		receiving_packet = false;
+        current_flit_no = 0;
+		rx_state = RX_IDLE;
 	} else {
-		if (req_rx.read() == 1 - current_level_rx) {
-			Flit flit_tmp = flit_rx.read();
-			
-			if (flit_tmp.flit_type == FLIT_TYPE_HEAD) {
-				packet_buffer.clear();
-				current_packet_size = flit_tmp.sequence_length;
-				receiving_packet = true;
-			}
-			
-			if (receiving_packet) {
-				uint8_t* data = flit_tmp.data;
-				packet_buffer.insert(packet_buffer.end(), data, data + FLIT_SIZE);
-				
-				if (flit_tmp.flit_type == FLIT_TYPE_TAIL) {
-					tlm_generic_payload trans;
-					sc_time delay = SC_ZERO_TIME;
-					
-					trans.set_command(TLM_WRITE_COMMAND);
-					trans.set_data_ptr(packet_buffer.data());
-					trans.set_data_length(packet_buffer.size());
-					
-					local_isock->b_transport(trans, delay);
-					
-					if (trans.get_response_status() == TLM_OK_RESPONSE) {
-						// TODO
-					}
-					
-					// 重置接收状态
-					receiving_packet = false;
-					packet_buffer.clear();
-					current_packet_size = 0;
+		// state machine implementation
+		switch (rx_state) {
+			case RX_IDLE:
+				// in IDLE state, wait for new HEAD FLIT
+				if (req_rx.read() == 1 - current_level_rx) {
+					Flit flit_tmp = flit_rx.read();
+                    assert(flit_tmp.flit_type == FLIT_TYPE_HEAD);
+
+                    data_buffer.clear();
+                    current_packet_size = flit_tmp.sequence_length;
+                    current_flit_no = 1;
+                    rx_state = RX_RECEIVING;
+                    
+                    // confirm receiving
+                    current_level_rx = 1 - current_level_rx;
 				}
-			}
-			
-			current_level_rx = 1 - current_level_rx;  // Negate the old value for Alternating Bit Protocol (ABP)
-		} 
+				break;
+				
+			case RX_RECEIVING:
+				// in RECEIVING state, receive BODY or TAIL FLIT
+				if (req_rx.read() == 1 - current_level_rx) {
+					Flit flit_tmp = flit_rx.read();
+                    assert(flit_tmp.flit_type == FLIT_TYPE_BODY || flit_tmp.flit_type == FLIT_TYPE_TAIL);
+
+                    data_buffer.insert(data_buffer.end(), flit_tmp.data, flit_tmp.data + flit_tmp.valid_len);
+                    rx_state = flit_tmp.flit_type == FLIT_TYPE_BODY ? RX_RECEIVING : RX_SENDING;
+
+                    // defensive programming
+                    current_flit_no++;
+                    if (flit_tmp.flit_type == FLIT_TYPE_TAIL) {
+                        assert(current_flit_no == current_packet_size);
+                    }
+
+                    // confirm receiving
+                    current_level_rx = 1 - current_level_rx;
+				}
+				break;
+				
+			case RX_SENDING:
+				// try to send complete packet via TLM
+				tlm_generic_payload trans;
+				sc_time delay = SC_ZERO_TIME;
+				
+				trans.set_command(TLM_WRITE_COMMAND);
+				trans.set_data_ptr(data_buffer.data());
+				trans.set_data_length(data_buffer.size());
+				
+				local_isock->b_transport(trans, delay);
+				
+				if (trans.get_response_status() == TLM_OK_RESPONSE) {
+					// send successfully, back to IDLE state
+					data_buffer.clear();
+					current_packet_size = 0;
+                    current_flit_no = 0;
+					rx_state = RX_IDLE;
+				}
+				// if sending failed, stay in SENDING state, try again next time
+				break;
+		}
+		
+		// always update ACK signal
 		ack_rx.write(current_level_rx);
 	}
 }
 
+/*
+ * Receive data from DMACTRL via TLM, parse the header,
+ * and push the packet to the packet_queue
+*/
 void ProcessingElement::dma_b_transport(tlm_generic_payload& trans, sc_time& delay) {
-	uint8_t* data_ptr = trans.get_data_ptr();
-	unsigned int data_len = trans.get_data_length();
-
-	assert(data_len % FLIT_SIZE == 0);
-
-    // extract header
-	int dst_id = data_ptr[0];
-	int res_1  = data_ptr[1];
-	int res_2  = data_ptr[2];
-	int res_3  = data_ptr[3];
-
-	assert(dst_id < GlobalParams::mesh_dim_x * GlobalParams::mesh_dim_y);
-
-	// extract payload
-	uint8_t *payload = data_ptr + FLIT_SIZE;
-	uint8_t nr_flit  = data_len / FLIT_SIZE - 1; // minus header
-	int payload_byte = nr_flit * FLIT_SIZE;
-
-    // create packet
+	uint8_t* raw_data = trans.get_data_ptr();
+	unsigned int trans_len = trans.get_data_length();
+    assert(trans_len == sizeof(Header));
+	
+	Header header;
+	memcpy(&header, raw_data, sizeof(Header));
+	int dst_id = header.hbm_id ? header.hbm_id : header.dst_id;    // HBM ID != 0 means HBM transaction 
+	int nr_body_flits = (header.len + FLIT_SIZE - 1) / FLIT_SIZE;  // Ceiling division
+	int nr_flit = 1 + nr_body_flits + 1;  // head_flit + body_flits + tail_flit
+	
 	Packet packet;
 	int vc = randInt(0, GlobalParams::n_virtual_channels - 1);
 	double now = sc_time_stamp().to_double() / GlobalParams::clock_period_ps;
-	packet.make(local_id, dst_id, vc, now, nr_flit, payload, payload_byte);
-
-    // push packet to packet_queue
-    packet_queue.push(packet);
-    
-	trans.set_response_status(TLM_OK_RESPONSE);
+    packet.make(local_id, dst_id, vc, now, nr_flit, header);
+	    
+	packet_queue_mutex.lock();
+	if (packet_queue.size() < GlobalParams::buffer_depth) {
+		packet_queue.push(packet);
+		trans.set_response_status(TLM_OK_RESPONSE);
+	} else {
+		trans.set_response_status(TLM_INCOMPLETE_RESPONSE);
+	}
+	packet_queue_mutex.unlock();
 }
 
+/*
+ * Send flits to the router
+*/
 void ProcessingElement::txProcess() {
 	if (reset.read()) {
 		req_tx.write(0);
@@ -103,7 +138,13 @@ void ProcessingElement::txProcess() {
 		transmittedAtPreviousCycle = false;
 	} else {
 		if (ack_tx.read() == current_level_tx) {
-			if (!packet_queue.empty()) {
+            bool has_packet = false;
+            
+            packet_queue_mutex.lock();
+            has_packet = !packet_queue.empty();
+            packet_queue_mutex.unlock();
+            
+			if (has_packet) {
 				Flit flit = nextFlit();                   // Generate a new flit
 				flit_tx->write(flit);                     // Send the generated flit
 				current_level_tx = 1 - current_level_tx;  // Negate the old value for Alternating Bit Protocol (ABP)
@@ -115,40 +156,64 @@ void ProcessingElement::txProcess() {
 
 Flit ProcessingElement::nextFlit() {
 	Flit flit;
-	Packet packet = packet_queue.front();
+    
+    packet_queue_mutex.lock();
+    Packet packet = packet_queue.front();
+    packet_queue_mutex.unlock();
 
-	flit.src_id = packet.src_id;
-	flit.dst_id = packet.dst_id;
-	flit.vc_id = packet.vc_id;
-	flit.timestamp = packet.timestamp;
-	flit.sequence_no = packet.size - packet.flit_left;
-	flit.sequence_length = packet.size;
-	flit.hop_no = 0;
+    // Create a new flit
+    flit.src_id = packet.src_id;
+    flit.dst_id = packet.dst_id;
+    flit.vc_id = packet.vc_id;
+    flit.timestamp = packet.timestamp;
+    flit.sequence_no = packet.size - packet.flit_left;
+    flit.sequence_length = packet.size;
+    flit.hop_no = 0;
+    flit.hub_relay_node = NOT_VALID;
 
-	if (packet.data != nullptr) {
-		int start_idx = (packet.size - packet.flit_left) * FLIT_SIZE;
+    flit.cmd = packet.cmd;
+    flit.addr = packet.addr;
+    flit.len = packet.len;
 
-		memset(flit.data, 0, FLIT_SIZE);  
-		memcpy(flit.data, packet.data + start_idx, FLIT_SIZE);
-	}
+    // determine flit type
+    if (packet.size == packet.flit_left)
+        flit.flit_type = FLIT_TYPE_HEAD;
+    else if (packet.flit_left == 1)
+        flit.flit_type = FLIT_TYPE_TAIL;
+    else
+        flit.flit_type = FLIT_TYPE_BODY;
 
-	flit.hub_relay_node = NOT_VALID;
+    // BODY type loads data only
+    memset(flit.data, 0, FLIT_SIZE);
+    flit.valid_len = 0;
+    
+    if (flit.flit_type == FLIT_TYPE_BODY && packet.data != nullptr) {
+        int start_idx = (flit.sequence_no - 1) * FLIT_SIZE;
+        int remaining_bytes = packet.len - start_idx;
+        int copy_size = (remaining_bytes < FLIT_SIZE) ? remaining_bytes : FLIT_SIZE;
 
-	if (packet.size == packet.flit_left)
-		flit.flit_type = FLIT_TYPE_HEAD;
-	else if (packet.flit_left == 1)
-		flit.flit_type = FLIT_TYPE_TAIL;
-	else
-		flit.flit_type = FLIT_TYPE_BODY;
+        if (copy_size > 0) {
+            memcpy(flit.data, packet.data + start_idx, copy_size);
+            flit.valid_len = copy_size;
+        }
+    }
 
-	packet_queue.front().flit_left--;
-	if (packet_queue.front().flit_left == 0) {
-		if (packet_queue.front().data != nullptr) {
-			// Don't forget
-			delete[] packet_queue.front().data;
-		}
-		packet_queue.pop();
-	}
+    // Print flit properties in green color
+    std::cout << "\033[1;32mFlit Properties:\033[0m" << std::endl;
+    std::cout << "\033[1;32m  sequence_no: " << flit.sequence_no << "\033[0m" << std::endl;
+    std::cout << "\033[1;32m  sequence_length: " << flit.sequence_length << "\033[0m" << std::endl;
+    std::cout << "\033[1;32m  flit_type: " << flit.flit_type << "\033[0m" << std::endl;
+    std::cout << "\033[1;32m  valid_len: " << flit.valid_len << "\033[0m" << std::endl;
+
+    packet_queue_mutex.lock();
+    packet_queue.front().flit_left--;
+    if (packet_queue.front().flit_left == 0) {
+        if (packet_queue.front().data != nullptr) {
+            delete[] packet_queue.front().data;
+        }
+        packet_queue.pop();
+    }
+    packet_queue_mutex.unlock();
 
 	return flit;
 }

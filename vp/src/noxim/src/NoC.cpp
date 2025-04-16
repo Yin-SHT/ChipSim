@@ -1971,6 +1971,36 @@ void NoC::buildMesh() {
 		t[i] = new Tile *[GlobalParams::mesh_dim_y];
 	}
 
+    hbm = new HBM("HBM");
+    hbm_ctrl = new HBM_CTRL * [GlobalParams::mesh_dim_y];
+    for (int i = 0; i < GlobalParams::mesh_dim_y; i++) {
+        // Create HBM controller
+        string hbm_ctrl_name = "HBM_CTRL_" + to_string(i);
+        hbm_ctrl[i] = new HBM_CTRL(hbm_ctrl_name.c_str());
+
+        // Map clock and reset
+        hbm_ctrl[i]->clock(clock);
+        hbm_ctrl[i]->reset(reset);
+
+        // Map Rx signals
+        hbm_ctrl[i]->req_rx(req[0][i].west);
+        hbm_ctrl[i]->flit_rx(flit[0][i].west);
+        hbm_ctrl[i]->ack_rx(ack[0][i].east);
+        hbm_ctrl[i]->buffer_full_status_rx(buffer_full_status[0][i].east);
+
+        // Map Tx signals
+        hbm_ctrl[i]->req_tx(req[0][i].east);
+        hbm_ctrl[i]->flit_tx(flit[0][i].east);
+        hbm_ctrl[i]->ack_tx(ack[0][i].west);
+        hbm_ctrl[i]->buffer_full_status_tx(buffer_full_status[0][i].west);
+
+        // Map HBM socket
+        hbm_ctrl[i]->hbm_socket.bind(hbm->targ_socket[i]);
+
+        // Configure HBM controller
+        hbm_ctrl[i]->configure(i, GlobalParams::buffer_depth);
+    }
+
 	// Create the mesh as a matrix of tiles
 	for (int j = 0; j < GlobalParams::mesh_dim_y; j++) {
 		for (int i = 0; i < GlobalParams::mesh_dim_x; i++) {

@@ -12,9 +12,19 @@ Routing_XY* Routing_XY::getInstance() {
 }
 
 vector<int> Routing_XY::route(Router* router, const RouteData& routeData) {
-	Coord current = id2Coord(routeData.current_id);
-	Coord destination = id2Coord(routeData.dst_id);
 	vector<int> directions;
+	Coord current;
+	Coord destination;
+
+    // If the destination is -1, we are sending to the HBM (west)
+    if (routeData.dst_id == -1) {
+        directions.push_back(DIRECTION_WEST);
+        return directions;
+    }
+
+    // Otherwise, we are routing within the mesh
+	current = id2Coord(routeData.current_id);
+	destination = id2Coord(routeData.dst_id);
 
 	if (destination.x > current.x)
 		directions.push_back(DIRECTION_EAST);

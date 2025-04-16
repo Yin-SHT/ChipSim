@@ -25,12 +25,12 @@
 class HBM : public sc_core::sc_module {
 public:
     // TLM-2.0 socket, one for each channel (16 channels total)
-    std::vector<tlm_utils::simple_target_socket<HBM>> targ_socket;
+    std::array<tlm_utils::simple_target_socket<HBM>, 16> targ_socket;
     
     // Constructor
     SC_HAS_PROCESS(HBM);
     HBM(sc_core::sc_module_name name, 
-        uint64_t memory_size = 8 * 1024 * 1024 * 1024ULL,  // 8GB default
+        uint64_t memory_size = 1 * 1024 * 1024 * 1024ULL,  // 1GB default
         uint32_t interleave_size = 256,                    // 256 bytes default
         uint32_t num_channels = 16)                        // 16 channels default
     : sc_core::sc_module(name),
@@ -38,9 +38,6 @@ public:
       m_interleave_size(interleave_size),
       m_num_channels(num_channels)
     {
-        // Initialize the channels and target sockets
-        targ_socket.resize(m_num_channels);
-        
         // Register callbacks for each socket
         for (uint32_t i = 0; i < m_num_channels; i++) {
             targ_socket[i].register_b_transport(this, &HBM::b_transport);
@@ -110,8 +107,12 @@ private:
         // Determine interleave block index
         uint64_t block_index = addr / m_interleave_size;
         
-        // Determine channel using round-robin assignment of blocks
-        channel = block_index % m_num_channels;
+        // xor-shift algorithm to generate a random number
+        uint64_t x = block_index;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        channel = x % m_num_channels;
         
         // Calculate offset within the channel
         uint64_t channel_block_index = block_index / m_num_channels;
@@ -171,6 +172,13 @@ private:
             if (acquired) {
                 // Perform write to the mapped channel
                 memcpy(&m_channel_data[channel][offset], data_ptr, data_length);
+
+                // Print data_ptr in red
+                std::cout << "\033[1;31m";
+                for (unsigned int i = 0; i < data_length; ++i) {
+                    std::cout << static_cast<char>(data_ptr[i]);
+                }
+                std::cout << "\033[0m" << std::endl;
                 
                 // Release write lock
                 release_write_lock(block_index);

@@ -18,6 +18,8 @@
 #include "Hub.h"
 #include "Channel.h"
 #include "TokenRing.h"
+#include "HBM_Ctrl.h"
+#include "HBM.h"
 
 using namespace std;
 
@@ -82,6 +84,10 @@ SC_MODULE(NoC)
     map<int, Channel*> channel;
 
     TokenRing* token_ring;
+
+    // HBM Controller
+    HBM *hbm;
+    HBM_CTRL ** hbm_ctrl;
 
     // Global tables
     GlobalRoutingTable grtable;

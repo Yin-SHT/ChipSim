@@ -9,113 +9,173 @@
 #include <systemc>
 #include <vector>
 #include <string>
+#include "core/engine/type.h"
+#include "noxim/src/DataStructs.h"
 
 using namespace sc_core;
 using namespace tlm;
 
-class DMACTRL : public sc_core::sc_module {
-   public:
-	// I/O Ports
-	sc_in_clk clock;    // The input clock for the DMACTRL
-	sc_in<bool> reset;  // The reset signal for the DMACTRL
+// DMACTRL state enumeration
+enum DMACTRLState {
+	IDLE,
+	SEND,
+	RECV
+};
 
+class DMACTRL : public sc_core::sc_module {
+public:
+	// I/O Ports
+	sc_in_clk clock;
+	sc_in<bool> reset;
+
+	// TLM-2 sockets
 	tlm_utils::simple_target_socket<DMACTRL> tsock;
 	tlm_utils::simple_initiator_socket<DMACTRL> isock;
-
 	tlm_utils::simple_target_socket<DMACTRL> local_tsock;
 	tlm_utils::simple_initiator_socket<DMACTRL> local_isock;
 
-	std::atomic<uint32_t> *long_instr_complete;
+	// FIFO to store commands
+	sc_fifo<Fileds*> cmd_queue;
 
 	// reserve data from Router
 	std::vector<uint8_t> router_data_buffer;
 
-	sc_event send_hello_event;
-	int send_counter;
-	sc_time send_interval; 
+	// Current state 
+	DMACTRLState current_state;
+	Fileds* current_cmd;
+	
+    // Indicates if there is a transaction from local_tsock
+	bool has_received_local_trans;
+	
+	// Number of completed long instructions
+	std::atomic<uint32_t> *long_instr_complete;
 
 	SC_CTOR(DMACTRL) {
-		local_tsock.register_b_transport(this, &DMACTRL::router_b_transport);
-
-		SC_METHOD(sentry);
+		// Register b_transport callback
+		local_tsock.register_b_transport(this, &DMACTRL::local_transport);
+		
+		// Register state machine main method, sensitive to clock rising edge
+		SC_METHOD(state_machine);
 		sensitive << reset;
 		sensitive << clock.pos();
+	}
 
-		SC_THREAD(send_hello_world);
+    bool has_send = false;
+
+	// State machine main method
+	void state_machine() {
+		if (reset.read()) {
+			current_state = IDLE;
+			current_cmd = nullptr;
+			has_received_local_trans = false;
+			return;
+		}
 		
-		send_counter = 0;
-		send_interval = sc_time(10, SC_NS);  
-	}
-
-	void router_b_transport(tlm_generic_payload& trans, sc_time& delay) {
-		uint8_t* data_ptr = trans.get_data_ptr();
-		unsigned int data_len = trans.get_data_length();
-
-		router_data_buffer.insert(router_data_buffer.end(), data_ptr, data_ptr + data_len);
-
-		trans.set_response_status(TLM_OK_RESPONSE);
-
-		router_data_buffer.push_back(0);
-
-		printf("%s: %s\n", name(), data_ptr);
-
-		router_data_buffer.clear();
-	}
-
-	void sentry() {
-		if (!reset.read()) {
-			send_hello_event.notify();
+		// State machine logic
+		switch (current_state) {
+			case IDLE:
+				if (has_received_local_trans) {
+					current_state = RECV;
+				} else if (cmd_queue.num_available() > 0) {
+					current_cmd = cmd_queue.read();
+					
+					// Determine next state based on command content
+					// Currently simple handling: all commands go to SEND state
+					current_state = SEND;
+				} else if (!strcmp(name(), "DMACTRL[4,5]") && !has_send) {
+					current_state = SEND;
+				}
+				break;
+				
+			case SEND:
+				handle_send_state();
+				break;
+				
+			case RECV:
+				handle_recv_state();
+				break;
+				
+			default:
+				// Unknown state, return to IDLE
+				current_state = IDLE;
+				break;
 		}
 	}
 
-	int i = 1;
+	// Handle transactions from local_tsock
+	void local_transport(tlm_generic_payload& trans, sc_time& delay) {
+		// Only process incoming transactions in IDLE state
+		if (current_state == IDLE) {
+			uint8_t* data_ptr = trans.get_data_ptr();
+			unsigned int data_len = trans.get_data_length();
 
-	void send_hello_world() {
-		wait(send_hello_event);
+			// Store incoming data
+			router_data_buffer.clear();
+			router_data_buffer.insert(router_data_buffer.end(), data_ptr, data_ptr + data_len);
 
-		while (true) {
-			wait(send_interval);
+			// Mark that a transaction has been received
+			has_received_local_trans = true;
 
-			if (strcmp(name(), "DMACTRL[0,0]")) break;
-
-			// create header
-			uint8_t dst_id = i ++;
-			uint8_t res_1  = 0;
-			uint8_t res_2  = 0;
-			uint8_t res_3  = 0;
-			
-			// create payload
-			char message[12] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd', '!'};
-			
-			// create  transaction
-			std::vector<uint8_t> buffer;
-			buffer.push_back(dst_id);
-			buffer.push_back(res_1);
-			buffer.push_back(res_2);
-			buffer.push_back(res_3);
-
-			for (int i = 0; i < 12; i ++) {
-				buffer.push_back(message[i]);
-			}
-			
-			assert(buffer.size() % 4 == 0);
-
-			tlm_generic_payload trans;
-			sc_time delay = SC_ZERO_TIME;
-			
-			trans.set_command(TLM_WRITE_COMMAND);
-			trans.set_data_ptr(buffer.data());
-			trans.set_data_length(buffer.size());
-			
-			local_isock->b_transport(trans, delay);
-			
-			if (trans.get_response_status() == TLM_OK_RESPONSE) {
-				std::cout << name() << "Success send to router (dst_id: " << (int)dst_id << "): " << message << std::endl; 
-				if (i == 256)
-					break;
-			}
+			trans.set_response_status(TLM_OK_RESPONSE);
+		} else {
+			trans.set_response_status(TLM_INCOMPLETE_RESPONSE);
 		}
 	}
+
+    uint8_t test_data[16] = {'H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd', '!'};
+
+	// Handle SEND state: send transaction through local_isock
+	void handle_send_state() {
+        // assert(current_cmd != nullptr && "current_cmd is nullptr");
+
+        uint8_t *data_ptr = new uint8_t[16];
+        memcpy(data_ptr, test_data, 16);
+
+        // Create a header
+        Header header;
+        header.dst_id = 0;
+        header.hbm_id = -1;
+        header.cmd = TLM_WRITE_COMMAND;
+        header.addr = 0;
+        header.data = data_ptr;
+        header.len = 12;
+
+        // Create a tlm_generic_payload
+        tlm_generic_payload trans;
+        sc_time delay = SC_ZERO_TIME;
+
+        trans.set_data_ptr(reinterpret_cast<unsigned char*>(&header));
+        trans.set_data_length(sizeof(Header));
+        
+        // Send transaction through local_isock
+        local_isock->b_transport(trans, delay);
+        
+        // Check transaction status
+        if (trans.get_response_status() == TLM_OK_RESPONSE) {
+            // Free command memory
+            delete current_cmd;
+            current_cmd = nullptr;
+            
+            // Return to IDLE state
+            std::cout << "\033[1;31m" << name() << ": Has Send\033[0m" << std::endl;
+            has_send = true;
+            current_state = IDLE;
+        }
+	}
+
+	// Handle RECV state: process data received from local_tsock
+	void handle_recv_state() {
+        // Process received data (can be extended based on actual requirements)
+        std::cout << name() << ": Processing received data, size: " << router_data_buffer.size() << " bytes" << std::endl;
+        
+        // Reset flag
+        has_received_local_trans = false;
+        router_data_buffer.clear();
+        
+        // Return to IDLE state
+        current_state = IDLE;
+	}
+
 };
 
 #endif

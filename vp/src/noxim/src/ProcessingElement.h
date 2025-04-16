@@ -50,9 +50,18 @@ SC_MODULE(ProcessingElement) {
 
     ISS *core;
 
-	vector<uint8_t> packet_buffer;  
+	vector<uint8_t> data_buffer;  // buffer for storing data from router
 	int current_packet_size;        
+    int current_flit_no;
 	bool receiving_packet;          
+
+	// 添加接收状态机枚举
+	enum RxState {
+		RX_IDLE,    // 初始/等待状态
+		RX_RECEIVING, // 正在接收数据包
+		RX_SENDING    // 尝试发送完整数据包
+	};
+	RxState rx_state;  // 当前接收状态
 
 	vector<Packet> dma_rx_buffer;
 
@@ -61,6 +70,7 @@ SC_MODULE(ProcessingElement) {
 	bool current_level_rx;            // Current level for Alternating Bit Protocol (ABP)
 	bool current_level_tx;            // Current level for Alternating Bit Protocol (ABP)
 	queue<Packet> packet_queue;       // Local queue of packets
+	sc_mutex packet_queue_mutex;      // mutex for packet_queue
 	bool transmittedAtPreviousCycle;  // Used for distributions with memory
 
 	// Functions
