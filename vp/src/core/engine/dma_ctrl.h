@@ -162,7 +162,7 @@ public:
             current_cmd = nullptr;
             
             // Return to IDLE state
-            std::cout << "\033[1;31m" << name() << ": Has Send\033[0m" << std::endl;
+            std::cout << "\033[1;31m" << name() << ": Has Send WRITE transaction\033[0m" << std::endl;
             has_send = true;
             current_state = SEND2;
         }
@@ -191,7 +191,7 @@ public:
         // Check transaction status
         if (trans.get_response_status() == TLM_OK_RESPONSE) {
             // Return to IDLE state
-            std::cout << "\033[1;31m" << name() << ": Has Send\033[0m" << std::endl;
+            std::cout << "\033[1;31m" << name() << ": Has Send READ transaction\033[0m" << std::endl;
             current_state = IDLE;
         }
 	}
