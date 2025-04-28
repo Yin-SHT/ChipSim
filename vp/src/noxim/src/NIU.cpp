@@ -5,7 +5,7 @@
  * For the complete list of authors refer to file ../doc/AUTHORS.txt
  * For the license applied to these sources refer to file ../doc/LICENSE.txt
  *
- * This file contains the implementation of the processing element
+ * This file contains the implementation of the network interface unit
  */
 
 #include "NIU.h"
@@ -36,7 +36,7 @@ void NIU::state_machine() {
             if (has_dma) {
                 if (local_id == 0) {
                     niu_state = DMA_TRANS;
-                    dma_trans.cmd = TLM_READ_COMMAND;
+                    dma_trans.cmd = TLM_WRITE_COMMAND;
                     dma_trans.dst_id = 12;
                 } else {
                     has_dma = false;
@@ -58,13 +58,15 @@ void NIU::state_machine() {
             if (dma_trans.cmd == TLM_READ_COMMAND) {
                 niu_state = WAIT_ARREADY_MADE;
             } else if (dma_trans.cmd == TLM_WRITE_COMMAND) {
-
-            }
+                niu_state = WAIT_AW_W_READY_MADE;
+            } 
             break;
 
         case RX_TRANS:
             if (rx_trans.axi_channel == AXI_CHANNEL_AR) {
                 niu_state = WAIT_ARVALID_MADE;
+            } else if (rx_trans.axi_channel == AXI_CHANNEL_AW) {
+                niu_state = WAIT_AW_W_VALID_MADE;
             }
             break;
 
@@ -310,7 +312,263 @@ void NIU::state_machine() {
                 niu_state = NIU_IDLE;
             }
             break;
+        
+        case WAIT_AW_W_READY_MADE:
+            aw_w_head.src_id = local_id;
+            aw_w_head.dst_id = dma_trans.dst_id;
+            aw_w_head.vc_id = 0;  
+            aw_w_head.flit_type = FLIT_TYPE_HEAD;
+            aw_w_head.sequence_no = 0;
+            aw_w_head.sequence_length = 2;  // head flit + tail flit
+            aw_w_head.timestamp = sc_time_stamp().to_double();
+            aw_w_head.hop_no = 0;
+            
+            aw_w_head.awid = local_id;  
+            aw_w_head.axi_channel = AXI_CHANNEL_AW;
+            
+            aw_w_head.awvalid = true;
+            aw_w_head.awready = false;
+            aw_w_head.awaddr = dma_trans.addr;
+            aw_w_head.awprot = 0;
 
+            aw_w_head.wvalid = true;
+            aw_w_head.wready = false;
+            aw_w_head.wdata = 0xdeadbeaf;
+            aw_w_head.wstrb = 0;
+
+            aw_w_tail.src_id = local_id;
+            aw_w_tail.dst_id = dma_trans.dst_id;
+            aw_w_tail.vc_id = 0;
+            aw_w_tail.flit_type = FLIT_TYPE_TAIL;
+            aw_w_tail.sequence_no = 1;
+            aw_w_tail.sequence_length = 2;
+            aw_w_tail.timestamp = sc_time_stamp().to_double();
+            aw_w_tail.hop_no = 0;
+
+            niu_state = WAIT_AW_W_READY_SEND_HEAD;
+            break;
+
+        case WAIT_AW_W_READY_SEND_HEAD:
+            if (ack_tx.read() == current_level_tx) {
+                flit_tx->write(aw_w_head);                     
+                current_level_tx = 1 - current_level_tx;  
+                req_tx.write(current_level_tx);
+
+                niu_state = WAIT_AW_W_READY_SEND_TAIL;
+            }
+            break;
+
+        case WAIT_AW_W_READY_SEND_TAIL:
+            if (ack_tx.read() == current_level_tx) {
+                flit_tx->write(aw_w_tail);     
+                current_level_tx = 1 - current_level_tx;
+                req_tx.write(current_level_tx);
+
+                niu_state = WAIT_AW_W_READY;
+            }
+            break;
+
+        case WAIT_AW_W_READY:
+            if (req_rx.read() == 1 - current_level_rx) {
+                Flit flit_tmp = flit_rx.read();
+                current_level_rx = 1 - current_level_rx;
+
+                if (flit_tmp.flit_type == FLIT_TYPE_HEAD) {
+                    assert(flit_tmp.awid == dma_trans.dst_id);
+
+                    if (flit_tmp.awready == 1 && flit_tmp.wready == 1) {
+                        niu_state = WAIT_BVALID_MADE;
+                    }
+                }
+            }
+            ack_rx.write(current_level_rx);
+            break;
+
+        case WAIT_BVALID_MADE:
+            b_head.src_id = local_id;
+            b_head.dst_id = dma_trans.dst_id;
+            b_head.vc_id = 0;
+            b_head.flit_type = FLIT_TYPE_HEAD;
+            b_head.sequence_no = 0;
+            b_head.sequence_length = 2;
+            b_head.timestamp = sc_time_stamp().to_double();
+            b_head.hop_no = 0;
+
+            b_head.axi_channel = AXI_CHANNEL_B;
+            b_head.bid = local_id;
+            b_head.bvalid = false;
+            b_head.bready = true;
+            b_head.bresp = 0;
+                       
+            b_tail.src_id = local_id;
+            b_tail.dst_id = dma_trans.dst_id;
+            b_tail.vc_id = 0;
+            b_tail.flit_type = FLIT_TYPE_TAIL;
+            b_tail.sequence_no = 1;
+            b_tail.sequence_length = 2;
+            b_tail.timestamp = sc_time_stamp().to_double();
+            b_tail.hop_no = 0;
+
+            niu_state = WAIT_BVALID_SEND_HEAD;
+            break;
+
+        case WAIT_BVALID_SEND_HEAD:
+            if (ack_tx.read() == current_level_tx) {
+                flit_tx->write(b_head);
+                current_level_tx = 1 - current_level_tx;
+                req_tx.write(current_level_tx);
+
+                niu_state = WAIT_BVALID_SEND_TAIL;
+            }
+            break;
+
+        case WAIT_BVALID_SEND_TAIL:
+            if (ack_tx.read() == current_level_tx) {
+                flit_tx->write(b_tail);
+                current_level_tx = 1 - current_level_tx;
+                req_tx.write(current_level_tx);
+
+                niu_state = WAIT_BVALID; 
+            }
+            break;
+
+        case WAIT_BVALID:
+            if (req_rx.read() == 1 - current_level_rx) {
+                Flit flit_tmp = flit_rx.read();
+                current_level_rx = 1 - current_level_rx;  
+
+                if (flit_tmp.flit_type == FLIT_TYPE_HEAD) {
+                    assert(flit_tmp.bid == dma_trans.dst_id);
+
+                    if (flit_tmp.bvalid == 1) {
+                        has_dma = false;
+                        niu_state = NIU_IDLE;
+                    }
+                }
+            }
+            ack_rx.write(current_level_rx);
+            break;
+
+        case WAIT_AW_W_VALID_MADE:
+            aw_w_head.src_id = local_id;
+            aw_w_head.dst_id = rx_trans.src_id;
+            aw_w_head.vc_id = 0;  
+            aw_w_head.flit_type = FLIT_TYPE_HEAD;
+            aw_w_head.sequence_no = 0;
+            aw_w_head.sequence_length = 2;  // head flit + tail flit
+            aw_w_head.timestamp = sc_time_stamp().to_double();
+            aw_w_head.hop_no = 0;
+            
+            aw_w_head.awid = local_id;  
+            aw_w_head.axi_channel = AXI_CHANNEL_AW;
+
+            aw_w_head.awvalid = false;
+            aw_w_head.awready = true;
+            aw_w_head.awaddr = 0;
+            aw_w_head.awprot = 0;
+
+            aw_w_head.wvalid = false;
+            aw_w_head.wready = true;
+            aw_w_head.wdata = 0;
+            aw_w_head.wstrb = 0;
+
+            aw_w_tail.src_id = local_id;
+            aw_w_tail.dst_id = rx_trans.dst_id;
+            aw_w_tail.vc_id = 0;
+            aw_w_tail.flit_type = FLIT_TYPE_TAIL;
+            aw_w_tail.sequence_no = 1;
+            aw_w_tail.sequence_length = 2;
+            aw_w_tail.timestamp = sc_time_stamp().to_double();
+            aw_w_tail.hop_no = 0;
+
+            niu_state = WAIT_AW_W_VALID_SEND_HEAD;
+            break;
+
+        case WAIT_AW_W_VALID_SEND_HEAD:
+            if (ack_tx.read() == current_level_tx) {
+                flit_tx->write(aw_w_head);                     
+                current_level_tx = 1 - current_level_tx;  
+                req_tx.write(current_level_tx);
+
+                niu_state = WAIT_AW_W_VALID_SEND_TAIL;
+            }
+            break;
+
+        case WAIT_AW_W_VALID_SEND_TAIL:
+            if (ack_tx.read() == current_level_tx) {
+                flit_tx->write(aw_w_tail);     
+                current_level_tx = 1 - current_level_tx;
+                req_tx.write(current_level_tx);
+
+                niu_state = WAIT_BREADY;
+            }
+            break;
+
+        case WAIT_BREADY:
+            if (req_rx.read() == 1 - current_level_rx) {
+                Flit flit_tmp = flit_rx.read();
+                current_level_rx = 1 - current_level_rx;
+
+                if (flit_tmp.flit_type == FLIT_TYPE_HEAD) {
+                    assert(flit_tmp.bid == rx_trans.bid);
+
+                    if (flit_tmp.bready == 1) {
+                        niu_state = WAIT_BREADY_MADE;
+                    }
+                }
+            }
+            ack_rx.write(current_level_rx);
+            break;
+
+        case WAIT_BREADY_MADE:
+            b_head.src_id = local_id;
+            b_head.dst_id = rx_trans.src_id;
+            b_head.vc_id = 0;  
+            b_head.flit_type = FLIT_TYPE_HEAD;
+            b_head.sequence_no = 0;
+            b_head.sequence_length = 2;  // head flit + tail flit
+            b_head.timestamp = sc_time_stamp().to_double();
+            b_head.hop_no = 0;
+            
+            b_head.axi_channel = AXI_CHANNEL_B;
+            b_head.bid = local_id;
+            b_head.bvalid = true;
+            b_head.bready = false;
+            b_head.bresp = 0;
+
+            b_tail.src_id = local_id;
+            b_tail.dst_id = rx_trans.dst_id;
+            b_tail.vc_id = 0;
+            b_tail.flit_type = FLIT_TYPE_TAIL;
+            b_tail.sequence_no = 1;
+            b_tail.sequence_length = 2;
+            b_tail.timestamp = sc_time_stamp().to_double();
+            b_tail.hop_no = 0;
+
+            niu_state = WAIT_BREADY_SEND_HEAD;
+            break;
+
+        case WAIT_BREADY_SEND_HEAD:
+            if (ack_tx.read() == current_level_tx) {
+                flit_tx->write(b_head);                     
+                current_level_tx = 1 - current_level_tx;  
+                req_tx.write(current_level_tx);
+
+                printf("\033[31m0x%lx\033[0m\n", rx_trans.wdata);
+
+                niu_state = WAIT_RREADY_SEND_TAIL;
+            }
+            break;
+
+        case WAIT_BREADY_SEND_TAIL:
+            if (ack_tx.read() == current_level_tx) {
+                flit_tx->write(b_tail);     
+                current_level_tx = 1 - current_level_tx;
+                req_tx.write(current_level_tx);
+
+                niu_state = NIU_IDLE;
+            }
+            break;
         default:
             assert(false && "Invalid state");
             break;

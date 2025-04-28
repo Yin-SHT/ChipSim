@@ -210,9 +210,27 @@ struct Flit {
     bool rready;
     uint64_t rdata;
     uint8_t rresp;
-    
-    // ... could add write channel signals later if needed ...
 
+	// Write address channel signals
+	int awid;
+	bool awvalid;
+	bool awready;
+	uint64_t awaddr;
+	uint8_t awprot;
+
+	// Write data channel signals
+	int wid;
+	bool wvalid;
+	bool wready;
+	uint64_t wdata;
+	uint8_t wstrb;
+
+	// Write response channel signals
+	int bid;
+	bool bvalid;
+	bool bready;
+	uint8_t bresp; 
+    
 	inline bool operator==(const Flit &flit) const {
 		return (flit.src_id == src_id && flit.dst_id == dst_id && flit.flit_type == flit_type && flit.vc_id == vc_id &&
 		        flit.sequence_no == sequence_no && flit.sequence_length == sequence_length && flit.payload == payload &&

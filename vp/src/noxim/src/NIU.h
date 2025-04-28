@@ -31,6 +31,7 @@ enum NIUState {
     DMA_TRANS,
     RX_TRANS,
 
+    // AR、R
     WAIT_ARREADY_MADE,
     WAIT_ARREADY_SEND_HEAD,
     WAIT_ARREADY_SEND_TAIL,
@@ -52,6 +53,29 @@ enum NIUState {
     WAIT_RREADY_MADE,
     WAIT_RREADY_SEND_HEAD,
     WAIT_RREADY_SEND_TAIL,
+
+    // AW、W、B
+    WAIT_AW_W_READY_MADE,
+    WAIT_AW_W_READY_SEND_HEAD,
+    WAIT_AW_W_READY_SEND_TAIL,
+
+    WAIT_AW_W_READY,
+
+    WAIT_BVALID_MADE,
+    WAIT_BVALID_SEND_HEAD,
+    WAIT_BVALID_SEND_TAIL,
+
+    WAIT_BVALID,
+
+    WAIT_AW_W_VALID_MADE,
+    WAIT_AW_W_VALID_SEND_HEAD,
+    WAIT_AW_W_VALID_SEND_TAIL,
+
+    WAIT_BREADY,
+
+    WAIT_BREADY_MADE,
+    WAIT_BREADY_SEND_HEAD,
+    WAIT_BREADY_SEND_TAIL,
 };
 
 SC_MODULE(NIU) {
@@ -85,9 +109,17 @@ SC_MODULE(NIU) {
     Flit r_head;
     Flit r_tail;
 
+    Flit aw_w_head;
+    Flit aw_w_tail;
+
+    Flit b_head;
+    Flit b_tail;
+
     bool has_dma;
     DmaTrans dma_trans;
     Flit rx_trans;
+
+    uint64_t dma_data;
 
     NIUState niu_state;
 
