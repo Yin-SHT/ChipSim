@@ -75,6 +75,7 @@ public:
 		// State machine logic
 		switch (current_state) {
 			case IDLE:
+                break;
 				if (has_received_local_trans) {
 					current_state = RECV;
 				} else if (cmd_queue.num_available() > 0) {

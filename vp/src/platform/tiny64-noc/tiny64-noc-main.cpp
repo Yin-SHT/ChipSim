@@ -188,17 +188,17 @@ int sc_main(int arg_num, char *arg_vet[])
             int core_id = j * GlobalParams::mesh_dim_x + i;
 
             std::string core_name = std::string("core[") + to_string(i) + "," + to_string(j) + std::string("]");
-            n->t[i][j]->pe->core = new ISS(core_name.c_str(), core_id);
-            n->t[i][j]->pe->core->clock(clock);
-            n->t[i][j]->pe->core->reset(reset);
-            n->t[i][j]->pe->core->nr_done = &nr_done;
-            config_core(*(n->t[i][j]->pe->core), i, j);
+            ISS *core = new ISS(core_name.c_str(), core_id);
+            core->clock(clock);
+            core->reset(reset);
+            core->nr_done = &nr_done;
+            config_core(*core, i, j);
 
-            n->t[i][j]->pe->core->dma_ctrl->clock(clock);
-            n->t[i][j]->pe->core->dma_ctrl->reset(reset);
+            core->dma_ctrl->clock(clock);
+            core->dma_ctrl->reset(reset);
 
-            n->t[i][j]->pe->local_isock.bind(n->t[i][j]->pe->core->dma_ctrl->local_tsock);
-            n->t[i][j]->pe->core->dma_ctrl->local_isock.bind(n->t[i][j]->pe->local_tsock);
+            n->t[i][j]->niu->isock.bind(core->dma_ctrl->local_tsock);
+            core->dma_ctrl->local_isock.bind(n->t[i][j]->niu->tsock);
         }
     }
 

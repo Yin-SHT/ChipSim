@@ -153,6 +153,25 @@ struct TBufferFullStatus {
 	bool mask[MAX_VIRTUAL_CHANNELS];
 };
 
+// DMA Transfer structure
+struct DmaTrans {
+	tlm::tlm_command cmd;
+	int dst_id;
+	uint64_t addr;
+	int len;
+	uint8_t *data;
+};
+
+// AXI channel type enumeration
+enum AxiChannelType {
+    AXI_CHANNEL_AR,  // Address Read channel
+    AXI_CHANNEL_R,   // Read data channel
+    AXI_CHANNEL_AW,  // Address Write channel
+    AXI_CHANNEL_W,   // Write data channel
+    AXI_CHANNEL_B,   // Write response channel
+    AXI_CHANNEL_NONE // Not an AXI channel flit
+};
+
 // Flit -- Flit definition
 struct Flit {
 	int src_id;
@@ -174,6 +193,25 @@ struct Flit {
 
 	uint8_t data[FLIT_SIZE];   // Actual data
     int valid_len;             // Valid length of data
+
+    // AXI4-lite channel signals
+    AxiChannelType axi_channel;  // Type of AXI channel
+    
+    // Read address channel signals
+    int arid;
+    bool arvalid;
+    bool arready;
+    uint64_t araddr;
+    uint8_t arprot;
+    
+    // Read data channel signals
+    int rid;
+    bool rvalid;
+    bool rready;
+    uint64_t rdata;
+    uint8_t rresp;
+    
+    // ... could add write channel signals later if needed ...
 
 	inline bool operator==(const Flit &flit) const {
 		return (flit.src_id == src_id && flit.dst_id == dst_id && flit.flit_type == flit_type && flit.vc_id == vc_id &&

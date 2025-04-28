@@ -13,7 +13,8 @@
 
 #include <systemc.h>
 
-#include "ProcessingElement.h"
+#include "NIU.h"
+// #include "ProcessingElement.h"
 #include "Router.h"
 using namespace std;
 
@@ -56,7 +57,7 @@ SC_MODULE(Tile) {
 	sc_signal<int> free_slots_local;
 	sc_signal<int> free_slots_neighbor_local;
 
-	// Signals required for Router-PE connection
+	// Signals required for Router-NIU/PE connection
 	sc_signal<Flit> flit_rx_local;
 	sc_signal<bool> req_rx_local;
 	sc_signal<bool> ack_rx_local;
@@ -69,7 +70,8 @@ SC_MODULE(Tile) {
 
 	// Instances
 	Router *r;              // Router instance
-	ProcessingElement *pe;  // Processing Element instance
+	// ProcessingElement *pe;  // Processing Element instance
+	NIU *niu;  // NIU instance
 
 	// Constructor
 
@@ -122,25 +124,41 @@ SC_MODULE(Tile) {
 		r->buffer_full_status_tx[DIRECTION_HUB](hub_buffer_full_status_tx);
 
 		// Processing Element pin assignments
-		pe = new ProcessingElement("ProcessingElement");
-		pe->clock(clock);
-		pe->reset(reset);
+		// pe = new ProcessingElement("ProcessingElement");
+		// pe->clock(clock);
+		// pe->reset(reset);
 
-		pe->flit_rx(flit_rx_local);
-		pe->req_rx(req_rx_local);
-		pe->ack_rx(ack_rx_local);
-		pe->buffer_full_status_rx(buffer_full_status_rx_local);
+		// pe->flit_rx(flit_rx_local);
+		// pe->req_rx(req_rx_local);
+		// pe->ack_rx(ack_rx_local);
+		// pe->buffer_full_status_rx(buffer_full_status_rx_local);
 
-		pe->flit_tx(flit_tx_local);
-		pe->req_tx(req_tx_local);
-		pe->ack_tx(ack_tx_local);
-		pe->buffer_full_status_tx(buffer_full_status_tx_local);
+		// pe->flit_tx(flit_tx_local);
+		// pe->req_tx(req_tx_local);
+		// pe->ack_tx(ack_tx_local);
+		// pe->buffer_full_status_tx(buffer_full_status_tx_local);
+
+		// NIU pin assignments
+		niu = new NIU("NIU");
+		niu->clock(clock);
+		niu->reset(reset);
+
+		niu->flit_rx(flit_rx_local);
+		niu->req_rx(req_rx_local);
+		niu->ack_rx(ack_rx_local);
+		niu->buffer_full_status_rx(buffer_full_status_rx_local);
+
+		niu->flit_tx(flit_tx_local);
+		niu->req_tx(req_tx_local);
+		niu->ack_tx(ack_tx_local);
+		niu->buffer_full_status_tx(buffer_full_status_tx_local);
 
 		// NoP
 		//
 		r->free_slots[DIRECTION_LOCAL](free_slots_local);
 		r->free_slots_neighbor[DIRECTION_LOCAL](free_slots_neighbor_local);
-		pe->free_slots_neighbor(free_slots_neighbor_local);
+		// pe->free_slots_neighbor(free_slots_neighbor_local);
+		niu->free_slots_neighbor(free_slots_neighbor_local);
 	}
 };
 
