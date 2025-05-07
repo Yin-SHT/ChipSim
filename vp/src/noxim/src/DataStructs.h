@@ -30,7 +30,7 @@ class Coord {
 };
 
 // FlitType -- Flit type enumeration
-enum FlitType { FLIT_TYPE_HEAD, FLIT_TYPE_BODY, FLIT_TYPE_TAIL };
+enum FlitType { FLIT_TYPE_NONE, FLIT_TYPE_HEAD, FLIT_TYPE_BODY, FLIT_TYPE_TAIL };
 
 // Payload -- Payload definition
 struct Payload {
@@ -164,12 +164,12 @@ struct DmaTrans {
 
 // AXI channel type enumeration
 enum AxiChannelType {
+    AXI_CHANNEL_NONE,
     AXI_CHANNEL_AR,  // Address Read channel
     AXI_CHANNEL_R,   // Read data channel
     AXI_CHANNEL_AW,  // Address Write channel
     AXI_CHANNEL_W,   // Write data channel
     AXI_CHANNEL_B,   // Write response channel
-    AXI_CHANNEL_NONE // Not an AXI channel flit
 };
 
 // Flit -- Flit definition

@@ -31,6 +31,14 @@ enum NIUState {
     DMA_TRANS,
     RX_TRANS,
 
+    // RETRY
+    RETRY,
+
+    // INVALID
+    INVALID_MADE,
+    INVALID_SEND_HEAD,
+    INVALID_SEND_TAIL,
+
     // AR、R
     WAIT_ARREADY_MADE,
     WAIT_ARREADY_SEND_HEAD,
@@ -115,19 +123,34 @@ SC_MODULE(NIU) {
     Flit b_head;
     Flit b_tail;
 
+    Flit invalid_head;
+    Flit invalid_tail;
+    Flit invalid_flit;
+
+    Flit flit;
+    NIUState next_state;
+
     bool has_dma;
     DmaTrans dma_trans;
     Flit rx_trans;
 
     uint64_t dma_data;
 
+    NIUState after_invalid;
+    NIUState after_retry;
+    NIUState last_state;
     NIUState niu_state;
+
+    void make_filt(Flit &flit, int src_id, int dst_id, FlitType flit_type);
+    bool send_filt(Flit flit);
+    Flit read_flit();
 
     void state_machine();
 	void b_transport(tlm_generic_payload& trans, sc_time& delay);
 
 	// Constructor
 	SC_CTOR(NIU) {
+        // for test
         has_dma = true;
         niu_state = NIU_IDLE;
 
