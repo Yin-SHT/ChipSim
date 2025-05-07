@@ -138,9 +138,14 @@ void NIU::state_machine() {
                 // niu_state = DMA_TRANS;
 
                 // TEST
-                if (local_id != 0 && local_id <= 15) {
+                if (local_id >= 16 && local_id <= 31) {
+                    dma_trans.cmd = TLM_WRITE_COMMAND;
+                    dma_trans.dst_id = 7;
+
+                    niu_state = DMA_TRANS;
+                } else if (local_id >= 35 && local_id <= 40) {
                     dma_trans.cmd = TLM_READ_COMMAND;
-                    dma_trans.dst_id = 0;
+                    dma_trans.dst_id = 7;
 
                     niu_state = DMA_TRANS;
                 } else {
@@ -213,7 +218,7 @@ void NIU::state_machine() {
                     break;
 
                 case AXI_CHANNEL_AW:
-                    assert(invalid_flit.awvalid == 1);
+                    assert(invalid_flit.awvalid == 1 && invalid_flit.wvalid == 1);
 
                     invalid_head.awid = local_id;
                     invalid_head.awvalid = 0;
@@ -348,7 +353,7 @@ void NIU::state_machine() {
                     assert(flit.rvalid == 1);
                     
                     // Do something here
-                    printf("NIU[%d,%d] read: %lx\n", local_id % GlobalParams::mesh_dim_x, local_id / GlobalParams::mesh_dim_x, flit.rdata);
+                    printf("\033[32mNIU[%d,%d] read: %lx\033[0m\n", local_id % GlobalParams::mesh_dim_x, local_id / GlobalParams::mesh_dim_x, flit.rdata);
                     has_dma = false;
 
                     next_state = NIU_IDLE;
@@ -416,9 +421,10 @@ void NIU::state_machine() {
             make_filt(r_head, local_id, rx_trans.src_id, FLIT_TYPE_HEAD);
             make_filt(r_tail, local_id, rx_trans.src_id, FLIT_TYPE_TAIL);
 
+            // Set AXI channel signals
             r_head.axi_channel = AXI_CHANNEL_R;
-            r_head.rid = local_id;
 
+            r_head.rid = local_id;
             r_head.rvalid = 1;
             r_head.rready = 0;
             r_head.rdata = 0xdeadbeafdeadbeaf;
@@ -444,69 +450,76 @@ void NIU::state_machine() {
         //              AXI Write
         //
         //-------------------------------------
+
+        //-------------------------------------
+        //              MASTER
+        //-------------------------------------
         case WAIT_AW_W_READY_MADE:
             make_filt(aw_w_head, local_id, dma_trans.dst_id, FLIT_TYPE_HEAD);
             make_filt(aw_w_tail, local_id, dma_trans.dst_id, FLIT_TYPE_TAIL);
             
-            aw_w_head.awid = local_id;  
+            // Set AXI channel singals
             aw_w_head.axi_channel = AXI_CHANNEL_AW;
-            
+
+            aw_w_head.awid = local_id;  
             aw_w_head.awvalid = 1;
             aw_w_head.awready = 0;
             aw_w_head.awaddr = dma_trans.addr;
             aw_w_head.awprot = 0;
-
             aw_w_head.wvalid = 1;
             aw_w_head.wready = 0;
-            aw_w_head.wdata = 0xdeadbeafdeadbeaf;
+            aw_w_head.wdata = dma_data;
             aw_w_head.wstrb = 0;
 
             niu_state = WAIT_AW_W_READY_SEND_HEAD;
             break;
 
         case WAIT_AW_W_READY_SEND_HEAD:
-            if (ack_tx.read() == current_level_tx) {
-                flit_tx->write(aw_w_head);                     
-                current_level_tx = 1 - current_level_tx;  
-                req_tx.write(current_level_tx);
+            if (!send_filt(aw_w_head)) break;
 
-                niu_state = WAIT_AW_W_READY_SEND_TAIL;
-            }
+            niu_state = WAIT_AW_W_READY_SEND_TAIL;
             break;
 
         case WAIT_AW_W_READY_SEND_TAIL:
-            if (ack_tx.read() == current_level_tx) {
-                flit_tx->write(aw_w_tail);     
-                current_level_tx = 1 - current_level_tx;
-                req_tx.write(current_level_tx);
+            if (!send_filt(aw_w_tail)) break;
 
-                niu_state = WAIT_AW_W_READY;
-            }
+            niu_state = WAIT_AW_W_READY;
             break;
 
         case WAIT_AW_W_READY:
-            if (req_rx.read() == 1 - current_level_rx) {
-                Flit flit_tmp = flit_rx.read();
-                current_level_rx = 1 - current_level_rx;
+            flit = read_flit();
+            next_state = WAIT_AW_W_READY;
 
-                if (flit_tmp.flit_type == FLIT_TYPE_HEAD) {
-                    assert(flit_tmp.awid == dma_trans.dst_id);
+            if (flit.flit_type == FLIT_TYPE_HEAD) {
+                if (flit.src_id == dma_trans.dst_id) {
+                    // node to be communicated
 
-                    if (flit_tmp.awready == 1 && flit_tmp.wready == 1) {
-                        niu_state = WAIT_BVALID_MADE;
+                    if (flit.awready == 1 && flit.wready == 1) {
+                        next_state = WAIT_BVALID_MADE;
+                    } else if (flit.awready == 0 || flit.wready == 0) {
+                        after_retry = WAIT_AW_W_READY_MADE;
+                        next_state = RETRY;
                     }
+                } else if (flit.src_id != dma_trans.dst_id) {
+                    // other node
+
+                    invalid_flit = flit;
+                    after_invalid = WAIT_AW_W_READY;
+                    next_state = INVALID_MADE;
                 }
             }
-            ack_rx.write(current_level_rx);
+
+            niu_state = next_state;
             break;
 
         case WAIT_BVALID_MADE:
             make_filt(b_head, local_id, dma_trans.dst_id, FLIT_TYPE_HEAD);
             make_filt(b_tail, local_id, dma_trans.dst_id, FLIT_TYPE_TAIL);
 
+            // Set AXI channel signals
             b_head.axi_channel = AXI_CHANNEL_B;
-            b_head.bid = local_id;
 
+            b_head.bid = local_id;
             b_head.bvalid = 0;
             b_head.bready = 1;
             b_head.bresp = 0;
@@ -515,56 +528,55 @@ void NIU::state_machine() {
             break;
 
         case WAIT_BVALID_SEND_HEAD:
-            if (ack_tx.read() == current_level_tx) {
-                flit_tx->write(b_head);
-                current_level_tx = 1 - current_level_tx;
-                req_tx.write(current_level_tx);
+            if (!send_filt(b_head)) break;
 
-                niu_state = WAIT_BVALID_SEND_TAIL;
-            }
+            niu_state = WAIT_BVALID_SEND_TAIL;
             break;
 
         case WAIT_BVALID_SEND_TAIL:
-            if (ack_tx.read() == current_level_tx) {
-                flit_tx->write(b_tail);
-                current_level_tx = 1 - current_level_tx;
-                req_tx.write(current_level_tx);
+            if (!send_filt(b_tail)) break;
 
-                niu_state = WAIT_BVALID; 
-            }
+            niu_state = WAIT_BVALID; 
             break;
 
         case WAIT_BVALID:
-            if (req_rx.read() == 1 - current_level_rx) {
-                Flit flit_tmp = flit_rx.read();
-                current_level_rx = 1 - current_level_rx;  
+            flit = read_flit();
+            next_state = WAIT_BVALID;
 
-                if (flit_tmp.flit_type == FLIT_TYPE_HEAD) {
-                    assert(flit_tmp.bid == dma_trans.dst_id);
+            if (flit.flit_type == FLIT_TYPE_HEAD) {
+                if (flit.src_id == dma_trans.dst_id) {
+                    assert(flit.bvalid == 1);
 
-                    if (flit_tmp.bvalid == 1) {
-                        printf("NIU[%d,%d] write: %lx\n", local_id % GlobalParams::mesh_dim_x, local_id / GlobalParams::mesh_dim_x, dma_data);
+                    // Do something here
+                    printf("\033[33mNIU[%d,%d] write: %lx\033[0m\n", local_id % GlobalParams::mesh_dim_x, local_id / GlobalParams::mesh_dim_x, dma_data);
+                    has_dma = false;
 
-                        has_dma = false;
-                        niu_state = NIU_IDLE;
-                    }
+                    next_state = NIU_IDLE;
+                } else if (flit.src_id != dma_trans.dst_id) {
+                    invalid_flit = flit;
+                    after_invalid = WAIT_BVALID;
+                    next_state = INVALID_MADE;
                 }
             }
-            ack_rx.write(current_level_rx);
+
+            niu_state = next_state;
             break;
 
+        //-------------------------------------
+        //              SLAVE
+        //-------------------------------------
         case WAIT_AW_W_VALID_MADE:
             make_filt(aw_w_head, local_id, rx_trans.src_id, FLIT_TYPE_HEAD);
             make_filt(aw_w_tail, local_id, rx_trans.src_id, FLIT_TYPE_TAIL);
             
-            aw_w_head.awid = local_id;  
+            // Set AXI channel signals
             aw_w_head.axi_channel = AXI_CHANNEL_AW;
 
+            aw_w_head.awid = local_id;  
             aw_w_head.awvalid = 0;
             aw_w_head.awready = 1;
             aw_w_head.awaddr = 0;
             aw_w_head.awprot = 0;
-
             aw_w_head.wvalid = 0;
             aw_w_head.wready = 1;
             aw_w_head.wdata = 0;
@@ -574,73 +586,61 @@ void NIU::state_machine() {
             break;
 
         case WAIT_AW_W_VALID_SEND_HEAD:
-            if (ack_tx.read() == current_level_tx) {
-                flit_tx->write(aw_w_head);                     
-                current_level_tx = 1 - current_level_tx;  
-                req_tx.write(current_level_tx);
+            if (!send_filt(aw_w_head)) break;
 
-                niu_state = WAIT_AW_W_VALID_SEND_TAIL;
-            }
+            niu_state = WAIT_AW_W_VALID_SEND_TAIL;
             break;
 
         case WAIT_AW_W_VALID_SEND_TAIL:
-            if (ack_tx.read() == current_level_tx) {
-                flit_tx->write(aw_w_tail);     
-                current_level_tx = 1 - current_level_tx;
-                req_tx.write(current_level_tx);
+            if (!send_filt(aw_w_tail)) break;
 
-                niu_state = WAIT_BREADY;
-            }
+            niu_state = WAIT_BREADY;
             break;
 
         case WAIT_BREADY:
-            if (req_rx.read() == 1 - current_level_rx) {
-                Flit flit_tmp = flit_rx.read();
-                current_level_rx = 1 - current_level_rx;
+            flit = read_flit();
+            next_state = WAIT_BREADY;
 
-                if (flit_tmp.flit_type == FLIT_TYPE_HEAD) {
-                    assert(flit_tmp.bid == rx_trans.bid);
+            if (flit.flit_type == FLIT_TYPE_HEAD) {
+                if (flit.src_id == rx_trans.src_id) {
+                    assert(flit.bready == 1);
 
-                    if (flit_tmp.bready == 1) {
-                        niu_state = WAIT_BREADY_MADE;
-                    }
+                    next_state = WAIT_BREADY_MADE;
+                } else if (flit.src_id != rx_trans.src_id) {
+                    invalid_flit = flit;
+                    after_invalid = WAIT_BREADY;
+                    next_state = INVALID_MADE;
                 }
             }
-            ack_rx.write(current_level_rx);
+
+            niu_state = next_state;
             break;
 
         case WAIT_BREADY_MADE:
             make_filt(b_head, local_id, rx_trans.src_id, FLIT_TYPE_HEAD);
             make_filt(b_tail, local_id, rx_trans.src_id, FLIT_TYPE_TAIL);
             
+            // Set AXI channel signals
             b_head.axi_channel = AXI_CHANNEL_B;
-            b_head.bid = local_id;
 
-            b_head.bvalid = 0;
-            b_head.bready = 1;
+            b_head.bid = local_id;
+            b_head.bvalid = 1;
+            b_head.bready = 0;
             b_head.bresp = 0;
 
             niu_state = WAIT_BREADY_SEND_HEAD;
             break;
 
         case WAIT_BREADY_SEND_HEAD:
-            if (ack_tx.read() == current_level_tx) {
-                flit_tx->write(b_head);                     
-                current_level_tx = 1 - current_level_tx;  
-                req_tx.write(current_level_tx);
+            if (!send_filt(b_head)) break;
 
-                niu_state = WAIT_RREADY_SEND_TAIL;
-            }
+            niu_state = WAIT_BREADY_SEND_TAIL;
             break;
 
         case WAIT_BREADY_SEND_TAIL:
-            if (ack_tx.read() == current_level_tx) {
-                flit_tx->write(b_tail);     
-                current_level_tx = 1 - current_level_tx;
-                req_tx.write(current_level_tx);
+            if (!send_filt(b_tail)) break;
 
-                niu_state = NIU_IDLE;
-            }
+            niu_state = NIU_IDLE;
             break;
         default:
             assert(false && "Invalid state");
@@ -649,17 +649,17 @@ void NIU::state_machine() {
 
 #ifdef TRACE
     if (last_state != niu_state) {
-        if (local_id == 0) {
+        if (local_id == 16) {
             // red output
             printf("\033[31mNIU[%d,%d]: %s --> %s\033[0m\n", local_id % GlobalParams::mesh_dim_x, local_id / GlobalParams::mesh_dim_x, NIUStateName[last_state], NIUStateName[niu_state]);
         } 
         
-        if (local_id == 1) {
+        if (local_id == 17) {
             // yellow output
             printf("\033[34mNIU[%d,%d]: %s --> %s\033[0m\n", local_id % GlobalParams::mesh_dim_x, local_id / GlobalParams::mesh_dim_x, NIUStateName[last_state], NIUStateName[niu_state]);
         }
 
-        if (local_id == 2) {
+        if (local_id == 15) {
             // green output
             printf("\033[32mNIU[%d,%d]: %s --> %s\033[0m\n", local_id % GlobalParams::mesh_dim_x, local_id / GlobalParams::mesh_dim_x, NIUStateName[last_state], NIUStateName[niu_state]);
         }

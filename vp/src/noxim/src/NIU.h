@@ -152,6 +152,7 @@ SC_MODULE(NIU) {
 	SC_CTOR(NIU) {
         // for test
         has_dma = true;
+        dma_data = 0xdeadbeafdeafbeaf;
         niu_state = NIU_IDLE;
 
 		SC_METHOD(state_machine);
