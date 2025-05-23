@@ -16,7 +16,7 @@
 
 #include "GlobalParams.h"
 
-#define FLIT_SIZE 4
+#define FLIT_SIZE 8
 
 // Coord -- XY coordinates type of the Tile inside the Mesh
 class Coord {
@@ -30,7 +30,7 @@ class Coord {
 };
 
 // FlitType -- Flit type enumeration
-enum FlitType { FLIT_TYPE_NONE, FLIT_TYPE_HEAD, FLIT_TYPE_BODY, FLIT_TYPE_TAIL };
+enum FlitType { FLIT_TYPE_HEAD, FLIT_TYPE_BODY, FLIT_TYPE_TAIL };
 
 // Payload -- Payload definition
 struct Payload {
@@ -46,12 +46,13 @@ struct Header {
     int dst_id; // destination ID
     int hbm_id; // HBM ID:  0 (Not used), -1 (West HBM), -2 (East HBM)
 
-    // Used for interaction with HBM
     tlm::tlm_command cmd;
     uint64_t addr;
     int len;
-
     uint8_t *data;
+
+    bool is_broadcast;
+    bool is_reduction;
 };
 
 // Packet -- Packet definition
@@ -116,6 +117,8 @@ struct RouteData {
 	int dst_id;
 	int dir_in;  // direction from which the packet comes from
 	int vc_id;
+    bool is_broadcast;
+    bool is_reduction;
 };
 
 struct ChannelStatus {
@@ -153,24 +156,6 @@ struct TBufferFullStatus {
 	bool mask[MAX_VIRTUAL_CHANNELS];
 };
 
-// DMA Transfer structure
-struct DmaTrans {
-	tlm::tlm_command cmd;
-	int dst_id;
-	uint64_t addr;
-	int len;
-	uint8_t *data;
-};
-
-// AXI channel type enumeration
-enum AxiChannelType {
-    AXI_CHANNEL_NONE,
-    AXI_CHANNEL_AR,  // Address Read channel
-    AXI_CHANNEL_R,   // Read data channel
-    AXI_CHANNEL_AW,  // Address Write channel
-    AXI_CHANNEL_W,   // Write data channel
-    AXI_CHANNEL_B,   // Write response channel
-};
 
 // Flit -- Flit definition
 struct Flit {
@@ -187,6 +172,13 @@ struct Flit {
 
 	int hub_relay_node;
 
+    // Broadcast attribute
+    bool is_broadcast;
+    bool local_reserved;
+
+
+    bool is_reduction;
+
     tlm::tlm_command cmd;       
     uint64_t addr;
     int len;
@@ -194,43 +186,6 @@ struct Flit {
 	uint8_t data[FLIT_SIZE];   // Actual data
     int valid_len;             // Valid length of data
 
-    // AXI4-lite channel signals
-    AxiChannelType axi_channel;  // Type of AXI channel
-    
-    // Read address channel signals
-    int arid;
-    bool arvalid;
-    bool arready;
-    uint64_t araddr;
-    uint8_t arprot;
-    
-    // Read data channel signals
-    int rid;
-    bool rvalid;
-    bool rready;
-    uint64_t rdata;
-    uint8_t rresp;
-
-	// Write address channel signals
-	int awid;
-	bool awvalid;
-	bool awready;
-	uint64_t awaddr;
-	uint8_t awprot;
-
-	// Write data channel signals
-	int wid;
-	bool wvalid;
-	bool wready;
-	uint64_t wdata;
-	uint8_t wstrb;
-
-	// Write response channel signals
-	int bid;
-	bool bvalid;
-	bool bready;
-	uint8_t bresp; 
-    
 	inline bool operator==(const Flit &flit) const {
 		return (flit.src_id == src_id && flit.dst_id == dst_id && flit.flit_type == flit_type && flit.vc_id == vc_id &&
 		        flit.sequence_no == sequence_no && flit.sequence_length == sequence_length && flit.payload == payload &&

@@ -86,6 +86,9 @@ void Router::txProcess() {
 			req_tx[i].write(0);
 			current_level_tx[i] = 0;
 		}
+
+        req_broadcast.write(0);
+        current_level_broadcast = 0;
 	} else {
 		// 1st phase: Reservation
 		for (int j = 0; j < DIRECTIONS + 2; j++) {
@@ -166,69 +169,87 @@ void Router::txProcess() {
 				// can happen
 				if (!buffer[i][vc].IsEmpty()) {
 					// power contribution already computed in 1st phase
-					Flit flit = buffer[i][vc].Front();
+					Flit& flit = buffer[i][vc].Front();
 					// LOG<< "*****TX***Direction= "<<i<< "************"<<endl;
 					// LOG<<"_cl_tx="<<current_level_tx[o]<<"req_tx="<<req_tx[o].read()<<" _ack= "<<ack_tx[o].read()<<
 					// endl;
 
-					if ((current_level_tx[o] == ack_tx[o].read()) &&
-					    (buffer_full_status_tx[o].read().mask[vc] == false)) {
-						// if (GlobalParams::verbose_mode > VERBOSE_OFF)
-						LOG << "Input[" << i << "][" << vc << "] forwarded to Output[" << o << "], flit: " << flit
-						    << endl;
+                    if (flit.src_id != local_id && flit.dst_id != local_id) {
+                        if (flit.is_broadcast && !flit.local_reserved) {
+                            // forward flit to local first
+                            if (ack_broadcast.read() == current_level_broadcast) {
+                                flit_broadcast.write(flit);
+                                current_level_broadcast = 1 - current_level_broadcast;
+                                req_broadcast.write(current_level_broadcast);
 
-						flit_tx[o].write(flit);
-						current_level_tx[o] = 1 - current_level_tx[o];
-						req_tx[o].write(current_level_tx[o]);
-						buffer[i][vc].Pop();
+                                flit.local_reserved = true;
+                            }
+                        }
+                    } 
 
-						if (flit.flit_type == FLIT_TYPE_TAIL) {
-							TReservation r;
-							r.input = i;
-							r.vc = vc;
-							reservation_table.release(r, o);
-						}
+                    if (flit.src_id == local_id || flit.dst_id == local_id || !flit.is_broadcast || (flit.is_broadcast && flit.local_reserved)) {
+                        if ((current_level_tx[o] == ack_tx[o].read()) &&
+                            (buffer_full_status_tx[o].read().mask[vc] == false)) {
+                            // if (GlobalParams::verbose_mode > VERBOSE_OFF)
+                            LOG << "Input[" << i << "][" << vc << "] forwarded to Output[" << o << "], flit: " << flit
+                                << endl;
 
-						/* Power & Stats ------------------------------------------------- */
-						if (o == DIRECTION_HUB)
-							power.r2hLink();
-						else
-							power.r2rLink();
+                            // Cleat broadcast attribute
+                            flit.local_reserved = false;
 
-						power.bufferRouterPop();
-						power.crossBar();
+                            flit_tx[o].write(flit);
+                            current_level_tx[o] = 1 - current_level_tx[o];
+                            req_tx[o].write(current_level_tx[o]);
+                            buffer[i][vc].Pop();
 
-						if (o == DIRECTION_LOCAL) {
-							power.networkInterface();
-							LOG << "Consumed flit " << flit << endl;
-							stats.receivedFlit(sc_time_stamp().to_double() / GlobalParams::clock_period_ps, flit);
-							if (GlobalParams::max_volume_to_be_drained) {
-								if (drained_volume >= GlobalParams::max_volume_to_be_drained)
-									sc_stop();
-								else {
-									drained_volume++;
-									local_drained++;
-								}
-							}
-						} else if (i != DIRECTION_LOCAL)  // not generated locally
-							routed_flits++;
-						/* End Power & Stats ------------------------------------------------- */
-						// LOG<<"END_OK_cl_tx="<<current_level_tx[o]<<"_req_tx="<<req_tx[o].read()<<" _ack=
-						// "<<ack_tx[o].read()<< endl;
-					} else {
-						LOG << " Cannot forward Input[" << i << "][" << vc << "] to Output[" << o << "], flit: " << flit
-						    << endl;
-						// LOG << " **DEBUG APB: current_level_tx: " << current_level_tx[o] << " ack_tx: " <<
-						// ack_tx[o].read() << endl;
-						LOG << " **DEBUG buffer_full_status_tx " << buffer_full_status_tx[o].read().mask[vc] << endl;
+                            if (flit.flit_type == FLIT_TYPE_TAIL) {
+                                TReservation r;
+                                r.input = i;
+                                r.vc = vc;
+                                reservation_table.release(r, o);
+                            }
 
-						// LOG<<"END_NO_cl_tx="<<current_level_tx[o]<<"_req_tx="<<req_tx[o].read()<<" _ack=
-						// "<<ack_tx[o].read()<< endl;
-						/*
-						if (flit.flit_type == FLIT_TYPE_HEAD)
-						reservation_table.release(i,flit.vc_id,o);
-						*/
-					}
+                            /* Power & Stats ------------------------------------------------- */
+                            if (o == DIRECTION_HUB)
+                                power.r2hLink();
+                            else
+                                power.r2rLink();
+
+                            power.bufferRouterPop();
+                            power.crossBar();
+
+                            if (o == DIRECTION_LOCAL) {
+                                power.networkInterface();
+                                LOG << "Consumed flit " << flit << endl;
+                                stats.receivedFlit(sc_time_stamp().to_double() / GlobalParams::clock_period_ps, flit);
+                                if (GlobalParams::max_volume_to_be_drained) {
+                                    if (drained_volume >= GlobalParams::max_volume_to_be_drained)
+                                        sc_stop();
+                                    else {
+                                        drained_volume++;
+                                        local_drained++;
+                                    }
+                                }
+                            } else if (i != DIRECTION_LOCAL)  // not generated locally
+                                routed_flits++;
+                            /* End Power & Stats ------------------------------------------------- */
+                            // LOG<<"END_OK_cl_tx="<<current_level_tx[o]<<"_req_tx="<<req_tx[o].read()<<" _ack=
+                            // "<<ack_tx[o].read()<< endl;
+                        } else {
+                            LOG << " Cannot forward Input[" << i << "][" << vc << "] to Output[" << o << "], flit: " << flit
+                                << endl;
+                            // LOG << " **DEBUG APB: current_level_tx: " << current_level_tx[o] << " ack_tx: " <<
+                            // ack_tx[o].read() << endl;
+                            LOG << " **DEBUG buffer_full_status_tx " << buffer_full_status_tx[o].read().mask[vc] << endl;
+
+                            // LOG<<"END_NO_cl_tx="<<current_level_tx[o]<<"_req_tx="<<req_tx[o].read()<<" _ack=
+                            // "<<ack_tx[o].read()<< endl;
+                            /*
+                            if (flit.flit_type == FLIT_TYPE_HEAD)
+                            reservation_table.release(i,flit.vc_id,o);
+                            */
+                        }
+                    }
 				}
 			}  // if not reserved
 			// else LOG<<"we have no reservation for direction "<<i<< endl;

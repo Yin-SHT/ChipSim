@@ -68,6 +68,10 @@ SC_MODULE(Tile) {
 	sc_signal<bool> ack_tx_local;
 	sc_signal<TBufferFullStatus> buffer_full_status_tx_local;
 
+	sc_signal<Flit> flit_tx_broadcast;
+	sc_signal<bool> req_tx_broadcast;
+	sc_signal<bool> ack_tx_broadcast;
+
 	// Instances
 	Router *r;              // Router instance
 	// ProcessingElement *pe;  // Processing Element instance
@@ -112,6 +116,12 @@ SC_MODULE(Tile) {
 		r->ack_tx[DIRECTION_LOCAL](ack_rx_local);
 		r->buffer_full_status_tx[DIRECTION_LOCAL](buffer_full_status_rx_local);
 
+        // broadcast
+		r->flit_broadcast(flit_tx_broadcast);
+		r->req_broadcast(req_tx_broadcast);
+		r->ack_broadcast(ack_tx_broadcast);
+
+
 		// hub related
 		r->flit_rx[DIRECTION_HUB](hub_flit_rx);
 		r->req_rx[DIRECTION_HUB](hub_req_rx);
@@ -152,6 +162,10 @@ SC_MODULE(Tile) {
 		niu->req_tx(req_tx_local);
 		niu->ack_tx(ack_tx_local);
 		niu->buffer_full_status_tx(buffer_full_status_tx_local);
+
+		niu->flit_broadcast(flit_tx_broadcast);
+		niu->req_broadcast(req_tx_broadcast);
+		niu->ack_broadcast(ack_tx_broadcast);
 
 		// NoP
 		//

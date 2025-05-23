@@ -25,65 +25,25 @@
 using namespace std;
 using namespace tlm;
 
-enum NIUState {
-    NIU_IDLE,
+enum RxState {
+    Rx_IDLE,
+    Rx_WAIT,
+    Rx_ASSEMBLE,
+    Rx_SEND,
+};
 
-    DMA_TRANS,
-    RX_TRANS,
+enum TxState {
+    Tx_IDLE,
+    Tx_WAIT,
+    Tx_DECOMPOSE,
+    Tx_SEND,
+};
 
-    // RETRY
-    RETRY,
-
-    // INVALID
-    INVALID_MADE,
-    INVALID_SEND_HEAD,
-    INVALID_SEND_TAIL,
-
-    // AR、R
-    WAIT_ARREADY_MADE,
-    WAIT_ARREADY_SEND_HEAD,
-    WAIT_ARREADY_SEND_TAIL,
-
-    WAIT_ARREADY,
-
-    WAIT_RVALID_MADE,
-    WAIT_RVALID_SEND_HEAD,
-    WAIT_RVALID_SEND_TAIL,
-
-    WAIT_RVALID,
-
-    WAIT_ARVALID_MADE,
-    WAIT_ARVALID_SEND_HEAD,
-    WAIT_ARVALID_SEND_TAIL,
-
-    WAIT_RREADY,
-
-    WAIT_RREADY_MADE,
-    WAIT_RREADY_SEND_HEAD,
-    WAIT_RREADY_SEND_TAIL,
-
-    // AW、W、B
-    WAIT_AW_W_READY_MADE,
-    WAIT_AW_W_READY_SEND_HEAD,
-    WAIT_AW_W_READY_SEND_TAIL,
-
-    WAIT_AW_W_READY,
-
-    WAIT_BVALID_MADE,
-    WAIT_BVALID_SEND_HEAD,
-    WAIT_BVALID_SEND_TAIL,
-
-    WAIT_BVALID,
-
-    WAIT_AW_W_VALID_MADE,
-    WAIT_AW_W_VALID_SEND_HEAD,
-    WAIT_AW_W_VALID_SEND_TAIL,
-
-    WAIT_BREADY,
-
-    WAIT_BREADY_MADE,
-    WAIT_BREADY_SEND_HEAD,
-    WAIT_BREADY_SEND_TAIL,
+enum BroadcastState {
+    Broadcast_IDLE,
+    Broadcast_WAIT,
+    Broadcast_ASSEMBLE,
+    Broadcast_SEND,
 };
 
 SC_MODULE(NIU) {
@@ -101,61 +61,62 @@ SC_MODULE(NIU) {
 	sc_in<bool> ack_tx;    // The outgoing ack signal associated with the output channel
 	sc_in<TBufferFullStatus> buffer_full_status_tx;
 
+	sc_in<Flit> flit_broadcast;  // The input channel
+	sc_in<bool> req_broadcast;   // The request associated with the input channel
+	sc_out<bool> ack_broadcast;  // The outgoing ack signal associated with the input channel
+
 	sc_in<int> free_slots_neighbor;
 
 	// Registers
 	int local_id;                     // Unique identification number
 	bool current_level_rx;            // Current level for Alternating Bit Protocol (ABP)
 	bool current_level_tx;            // Current level for Alternating Bit Protocol (ABP)
+	bool current_level_broadcast;     // Current level for Alternating Bit Protocol (ABP)
+
+    // Used for flit from Router
+    Flit head_flit;                   // Flit to be processed
+    vector<uint8_t> router_buffer;    // Buffer to store the data from router
+
+    Flit broadcast_head;              // Broadcast flit to be processed
+    vector<uint8_t> broadcast_buffer;    // Buffer to store the data from router
+
+    // Used for transaction from DMA Ctrl
+    bool has_dma;   
+    Header dma_trans;
+    vector<uint8_t> dma_buffer;
+    queue<Flit> flit_queue;
 
 	tlm_utils::simple_target_socket<NIU> tsock; // target socket for DMA Ctrl
 	tlm_utils::simple_initiator_socket<NIU> isock; // initiator socket for DMA Ctrl
 
-    Flit ar_head;
-    Flit ar_tail;
+    RxState rx_state;
+    TxState tx_state;
+    BroadcastState broadcast_state;
 
-    Flit r_head;
-    Flit r_tail;
+    Flit make_flit(int src_id, int dst_id, int vc_id, FlitType flit_type, int sequence_no, int sequence_length, Header &header);
 
-    Flit aw_w_head;
-    Flit aw_w_tail;
-
-    Flit b_head;
-    Flit b_tail;
-
-    Flit invalid_head;
-    Flit invalid_tail;
-    Flit invalid_flit;
-
-    Flit flit;
-    NIUState next_state;
-
-    bool has_dma;
-    DmaTrans dma_trans;
-    Flit rx_trans;
-
-    uint64_t dma_data;
-
-    NIUState after_invalid;
-    NIUState after_retry;
-    NIUState last_state;
-    NIUState niu_state;
-
-    void make_filt(Flit &flit, int src_id, int dst_id, FlitType flit_type);
-    bool send_filt(Flit flit);
-    Flit read_flit();
-
-    void state_machine();
+    void rx_process();
+    void tx_process();
+    void broadcast_process();
 	void b_transport(tlm_generic_payload& trans, sc_time& delay);
 
 	// Constructor
 	SC_CTOR(NIU) {
-        // for test
-        has_dma = true;
-        dma_data = 0xdeadbeafdeafbeaf;
-        niu_state = NIU_IDLE;
 
-		SC_METHOD(state_machine);
+        rx_state = RxState::Rx_IDLE;
+        tx_state = TxState::Tx_IDLE;
+
+        has_dma = true;
+
+		SC_METHOD(rx_process);
+		sensitive << reset;
+		sensitive << clock.pos();
+
+		SC_METHOD(tx_process);
+		sensitive << reset;
+		sensitive << clock.pos();
+
+		SC_METHOD(broadcast_process);
 		sensitive << reset;
 		sensitive << clock.pos();
 	}

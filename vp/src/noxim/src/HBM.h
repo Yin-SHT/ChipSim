@@ -197,7 +197,7 @@ private:
                 trans.set_response_status(tlm::TLM_INCOMPLETE_RESPONSE);
                 
                 // Schedule retry after some delay
-                sc_core::sc_time retry_delay = delay + sc_core::sc_time(10, sc_core::SC_NS);
+                // sc_core::sc_time retry_delay = delay + sc_core::sc_time(10, sc_core::SC_NS);
             }
         }
         else {

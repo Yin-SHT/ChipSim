@@ -203,9 +203,7 @@ void HBM_CTRL::handleHBM() {
                 } else if (flit.flit_type == FLIT_TYPE_TAIL) {
                     // Remove tail flit
                     flits_buffer.Pop();
-                } else {
-                    assert(false && "Invalid flit type");
-                }
+                } 
             }
             break;
             

@@ -43,6 +43,8 @@ class Buffer {
 
     Flit Front() const;	// Return a copy of the first flit in the buffer
 
+    Flit& Front();
+
     unsigned int Size() const;
 
     void ShowStats(std::ostream & out);

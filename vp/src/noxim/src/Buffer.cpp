@@ -204,6 +204,12 @@ Flit Buffer::Front() const
   return f;
 }
 
+Flit& Buffer::Front()
+{
+    assert(!IsEmpty());
+    return buffer.front();
+}
+
 unsigned int Buffer::Size() const
 {
   return buffer.size();
